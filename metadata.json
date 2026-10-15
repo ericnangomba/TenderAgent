@@ -1,0 +1,6 @@
+{
+  "name": "TenderAgent - South African RFP Automation Platform",
+  "description": "Micro-SaaS helping South African SMEs instantly analyze government and corporate RFPs for CSD, SARS, B-BBEE, and CIDB compliance and build structured bid response skeletons.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
