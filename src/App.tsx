@@ -4,11 +4,13 @@ import { Header } from './components/Header';
 import { RfpAnalyzer } from './components/RfpAnalyzer';
 import { TenderDiscovery } from './components/TenderDiscovery';
 import { PointsCalculator } from './components/PointsCalculator';
+import { FineTuningStudio } from './components/FineTuningStudio';
 import { ProfileVault } from './components/ProfileVault';
 import { SbdFormsGuide } from './components/SbdFormsGuide';
 import { SentryTraceViewer } from './components/SentryTraceViewer';
 import { Settings } from './components/Settings';
 import { BidSkeletonModal } from './components/BidSkeletonModal';
+import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 import { IUserProfile, ITender, IBidResponseSkeleton, ISentrySpanRecord } from './lib/types/tender';
 import { SAMPLE_TENDERS } from './lib/data/sampleTenders';
 import { generateBidResponseSkeleton } from './lib/utils/skeletonGenerator';
@@ -146,6 +148,12 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'finetuning' && (
+            <FineTuningStudio
+              isDarkMode={isDarkMode}
+            />
+          )}
+
           {activeTab === 'calculator' && (
             <PointsCalculator
               initialSystem={calculatorSystem}
@@ -212,6 +220,9 @@ export default function App() {
           isDarkMode={isDarkMode}
         />
       )}
+
+      {/* PWA Mobile Installation & Offline Status Prompt */}
+      <PwaInstallPrompt isDarkMode={isDarkMode} />
 
     </div>
   );

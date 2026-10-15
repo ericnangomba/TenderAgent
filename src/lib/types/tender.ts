@@ -103,3 +103,96 @@ export interface IBidResponseSkeleton {
   }[];
   recommendedSbdForms: string[];
 }
+
+export type LLMModelId = 
+  | 'gemini-2.5-flash'
+  | 'gemma-2-9b-it'
+  | 'gemma-2-27b-it'
+  | 'llama-3.1-8b-instruct'
+  | 'fine-tuned-sa-tender-8b'
+  | 'gemma2-local';
+
+export type LLMProvider = 
+  | 'google-genai' 
+  | 'ollama' 
+  | 'huggingface' 
+  | 'openrouter' 
+  | 'vllm' 
+  | 'local-simulator' 
+  | 'llama-3.1-8b' 
+  | 'gemma-2-9b'
+  | 'gemini'
+  | 'statutory';
+
+export interface IOpenLlmConfig {
+  provider: LLMProvider;
+  modelId: string;
+  baseUrl?: string;
+  apiKey?: string;
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+  systemPrompt?: string;
+}
+
+export interface IPlatformModel {
+  id: LLMModelId;
+  name: string;
+  provider: LLMProvider;
+  baseArchitecture: 'Gemini' | 'Gemma 2' | 'Llama 3.1 8B' | 'Custom LoRA';
+  description: string;
+  isOpenWeights: boolean;
+  isFineTuned: boolean;
+  contextWindow: string;
+  defaultEndpoint?: string;
+  isAvailable: boolean;
+}
+
+export interface IFineTuningExample {
+  id: string;
+  prompt: string;
+  completion: string;
+  domain: 'PPPFA 2022' | 'CIDB Act' | 'SBD Returnables' | 'Western Cape SCM' | 'Financial & General' | 'Functionality Scoring';
+  referenceRfp?: string;
+  createdAt: string;
+}
+
+export interface IFineTuningDataset {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  version: string;
+  exampleCount: number;
+  tokenCountEst: number;
+  format: 'alpaca' | 'sharegpt' | 'chatml';
+  examples: IFineTuningExample[];
+  createdAt: string;
+}
+
+export interface IFineTuningJob {
+  id: string;
+  jobName: string;
+  baseModel: 'meta-llama/Meta-Llama-3.1-8B-Instruct' | 'google/gemma-2-9b-it' | 'google/gemma-2-27b-it';
+  datasetId: string;
+  datasetName: string;
+  status: 'idle' | 'preparing' | 'training' | 'evaluating' | 'completed' | 'failed';
+  progress: number; // 0 - 100
+  currentEpoch: number;
+  totalEpochs: number;
+  currentStep: number;
+  totalSteps: number;
+  currentLoss: number;
+  learningRate: number;
+  vramUsageGb: number;
+  etaSeconds: number;
+  lossHistory: { step: number; loss: number; valLoss?: number }[];
+  loraRank: number;
+  loraAlpha: number;
+  loraDropout: number;
+  adapterArtifactName: string;
+  outputModelName: string;
+  createdAt: string;
+  completedAt?: string;
+}
+

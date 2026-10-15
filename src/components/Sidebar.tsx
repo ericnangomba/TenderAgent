@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { IUserProfile } from '../lib/types/tender';
 
-export type TabKey = 'analyzer' | 'discovery' | 'calculator' | 'vault' | 'sbd' | 'tracing' | 'settings';
+export type TabKey = 'analyzer' | 'discovery' | 'finetuning' | 'calculator' | 'vault' | 'sbd' | 'tracing' | 'settings';
 
 interface SidebarProps {
   activeTab: TabKey;
@@ -57,9 +57,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           key: 'discovery' as TabKey,
           label: 'eTender Feed',
-          description: 'SerpApi & Gov notice boards',
+          description: 'Live etenders.gov.za & WCG',
           icon: Sparkles,
-          count: '6'
+          count: '10 WC'
+        },
+        {
+          key: 'finetuning' as TabKey,
+          label: 'LLM Fine-Tuning',
+          description: 'Llama 3.1 & Gemma 2 Studio',
+          icon: Cpu,
+          badge: 'LoRA'
         },
         {
           key: 'calculator' as TabKey,
@@ -117,7 +124,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Sidebar Container */}
-      <aside className={`fixed top-0 bottom-0 left-0 z-50 w-72 flex flex-col transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
+      <aside className={`fixed top-0 bottom-0 left-0 z-50 w-80 flex flex-col transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       } ${
         isDarkMode 
@@ -126,31 +133,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }`}>
         
         {/* Top Brand Header */}
-        <div className={`h-16 px-5 flex items-center justify-between border-b ${
+        <div className={`relative min-h-[136px] p-4 flex items-center justify-center border-b ${
           isDarkMode ? 'border-slate-800/80 bg-slate-950' : 'border-slate-200/80 bg-white'
         }`}>
-          <div className="flex items-center gap-2.5">
-            <div className="h-9 w-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-base shadow-sm shadow-emerald-900/30">
-              <span className="select-none">🇿🇦</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className={`text-base font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  TenderAgent
-                </span>
-                <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400">
-                  Micro-SaaS
-                </span>
-              </div>
-              <p className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} leading-none`}>
-                South African RFP Automation
-              </p>
+          <div className="flex items-center justify-center w-full">
+            <div className={`p-2.5 rounded-2xl ${isDarkMode ? 'bg-white/95 shadow-md' : 'bg-transparent'} flex items-center justify-center w-full`}>
+              <img 
+                src="/tenderagentlogo.png" 
+                alt="TenderAgent Logo" 
+                className="h-28 sm:h-32 w-auto object-contain max-w-[270px] transition-transform hover:scale-105 duration-200" 
+              />
             </div>
           </div>
 
           <button
             onClick={onCloseMobile}
-            className={`p-1.5 rounded-md lg:hidden ${
+            className={`p-1.5 rounded-md lg:hidden absolute top-3 right-3 ${
               isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >

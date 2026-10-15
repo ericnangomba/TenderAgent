@@ -1,8 +1,9 @@
 import * as Sentry from '@sentry/node';
 import { GoogleGenAI } from '@google/genai';
 import TenderModel, { ITender } from '../models/Tender';
-import { ISentrySpanRecord, IBidResponseSkeleton, IUserProfile } from '../types/tender';
+import { ISentrySpanRecord, IBidResponseSkeleton, IUserProfile, IOpenLlmConfig } from '../types/tender';
 import { generateBidResponseSkeleton } from '../utils/skeletonGenerator';
+import { isRawPdfString, parseRawPdfString } from '../services/documentParser';
 
 // Initialize Sentry tracing if DSN provided or configure local tracing harness
 const SENTRY_DSN = process.env.SENTRY_DSN || '';
@@ -22,6 +23,7 @@ export interface ParseExecutionPayload {
   rawText: string;
   referenceId: string;
   companyProfile?: Partial<IUserProfile>;
+  llmConfig?: Partial<IOpenLlmConfig>;
 }
 
 export interface PipelineExecutionResult {
@@ -29,31 +31,60 @@ export interface PipelineExecutionResult {
   traceLogs: string[];
   spans: ISentrySpanRecord[];
   skeleton: IBidResponseSkeleton;
+  usedModel: string;
 }
 
 // In-memory tender repository backup when standalone without active MongoDB server
 export const inMemoryTenderStore = new Map<string, any>();
 
-/**
- * Parses tender raw text using Gemini / Gemma prompts or rule-based heuristics
- */
-async function extractComplianceWithGemma(rawText: string, referenceId: string): Promise<any> {
-  const apiKey = process.env.GEMINI_API_KEY;
+// Global Active LLM Configuration (Llama 3.1 8B, Gemma 2, Gemini 2.5 Flash, Ollama)
+export let activeLlmConfig: IOpenLlmConfig = {
+  provider: 'llama-3.1-8b',
+  modelId: 'meta-llama/Llama-3.1-8B-Instruct',
+  baseUrl: 'http://localhost:11434/v1',
+  apiKey: process.env.GEMINI_API_KEY || '',
+  temperature: 0.1,
+  topP: 0.9,
+  maxTokens: 2048,
+  systemPrompt: 'You are an expert South African tender compliance auditor analyzing public procurement RFP documents under South African procurement legislation (PPPFA, Preferential Procurement Regulations 2022, CIDB Act, COIDA, POPIA, and National Treasury SCM instructions).'
+};
 
-  if (apiKey) {
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = `You are an expert South African tender compliance auditor analyzing public procurement RFP documents under South African procurement legislation (PPPFA, Preferential Procurement Regulations 2022, CIDB Act, COIDA, and National Treasury SCM instructions).
-Analyze the following RFP text and output strictly a valid JSON object with no markdown wrapping or code fences:
+export function updateActiveLlmConfig(config: Partial<IOpenLlmConfig>): IOpenLlmConfig {
+  activeLlmConfig = { ...activeLlmConfig, ...config };
+  return activeLlmConfig;
+}
+
+export interface IModelExtractionResult {
+  parsed: any;
+  modelUsed: string;
+  failoverOccurred: boolean;
+  failoverLogs: string[];
+}
+
+/**
+ * Parses tender raw text using selected Open LLM (Llama 3.1 8B, Gemma 2, Gemini) with
+ * automatic bidirectional failover between local runners and cloud LLMs.
+ */
+async function extractComplianceWithGemma(
+  rawText: string, 
+  referenceId: string, 
+  customConfig?: Partial<IOpenLlmConfig>
+): Promise<IModelExtractionResult> {
+  const config = { ...activeLlmConfig, ...(customConfig || {}) };
+  const failoverLogs: string[] = [];
+  let failoverOccurred = false;
+
+  const prompt = `Analyze the following South African RFP text under South African procurement legislation (PPPFA, Preferential Procurement Regulations 2022, CIDB Act, COIDA, and National Treasury SCM instructions).
+Output strictly a valid JSON object with NO markdown code fences and NO explanatory prose:
 {
   "title": "Concise clean tender title",
   "referenceNumber": "Unique tender reference ID or use '${referenceId}'",
   "issuingDepartment": "Name of organ of state or state-owned enterprise",
-  "closingDate": "YYYY-MM-DD or standard ISO date string",
-  "cidbGrading": "Extracted CIDB grading such as 7CE, 3GB, or null if none required",
+  "closingDate": "YYYY-MM-DD",
+  "cidbGrading": "Extracted CIDB grading such as 7CE, 3GB, or null",
   "estimatedBudget": "Estimated amount in ZAR or Not Specified",
-  "category": "ICT & Technology | Civil & Construction | Security & Facilities | Logistics & Fleet | Professional Services | Medical & Healthcare",
-  "province": "Gauteng | Western Cape | KwaZulu-Natal | Eastern Cape | National / South Africa",
+  "category": "Services: General | Financial and insurance activities | Supplies: General | Civil engineering | Information and communication | ICT & Technology | Security & Facilities",
+  "province": "Western Cape | Gauteng | KwaZulu-Natal | Eastern Cape | National / South Africa",
   "checklist": {
     "csd": true,
     "sars": true,
@@ -61,15 +92,58 @@ Analyze the following RFP text and output strictly a valid JSON object with no m
     "coida": true,
     "compulsoryBriefing": true,
     "subcontracting30Percent": false,
-    "additionalDocuments": ["List of identified returnable schedules like SBD 4, SBD 6.1, PSIRA, OEM certificates, etc."]
+    "additionalDocuments": ["SBD 4", "SBD 6.1", "COIDA Good Standing", "CIDB Certificate"]
   },
   "points": "80/20" or "90/10",
-  "technicalThreshold": 70
+  "technicalThreshold": 75
 }
 
 Document Text:
 ${rawText.slice(0, 10000)}`;
 
+  // Helper to attempt local Open LLM (Llama 3.1 8B, Gemma 2, Ollama, LM Studio, vLLM)
+  const attemptLocalOpenLlm = async (endpoint: string, modelName: string): Promise<any | null> => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6500);
+
+      const response = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {})
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: modelName,
+          messages: [
+            { role: 'system', content: config.systemPrompt },
+            { role: 'user', content: prompt }
+          ],
+          temperature: config.temperature,
+          max_tokens: config.maxTokens
+        })
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const json = await response.json();
+        const text = json.choices?.[0]?.message?.content || '{}';
+        const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleaned);
+      }
+      return null;
+    } catch (err: any) {
+      return null;
+    }
+  };
+
+  // Helper to attempt Cloud Gemini
+  const attemptGemini = async (): Promise<any | null> => {
+    const apiKey = config.apiKey || process.env.GEMINI_API_KEY;
+    if (!apiKey) return null;
+    try {
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
@@ -78,12 +152,94 @@ ${rawText.slice(0, 10000)}`;
           temperature: 0.1,
         }
       });
-
-      const parsed = JSON.parse(response.text || '{}');
-      return parsed;
-    } catch (err) {
-      console.warn('[Agent LLM] Gemini call failed or fell back, using South African statutory extractor:', err);
+      return JSON.parse(response.text || '{}');
+    } catch (err: any) {
+      console.warn('[Agent LLM] Gemini call failed:', err.message);
+      return null;
     }
+  };
+
+  // Case A: Assigned to a LOCAL model (Llama 3.1 8B, Gemma 2, Ollama)
+  if (config.provider !== 'gemini' && config.provider !== 'statutory' && config.baseUrl) {
+    failoverLogs.push(`[Mastra Engine] Calling assigned local model: ${config.modelId} at ${config.baseUrl}...`);
+    const localResult = await attemptLocalOpenLlm(config.baseUrl, config.modelId);
+
+    if (localResult && localResult.title) {
+      return {
+        parsed: localResult,
+        modelUsed: `${config.modelId} (Local Runner)`,
+        failoverOccurred: false,
+        failoverLogs
+      };
+    }
+
+    // Local model failed / unreachable -> AUTOMATIC CLOUD FAILOVER
+    failoverOccurred = true;
+    failoverLogs.push(`⚠️ [Auto-Failover] Local model (${config.modelId}) offline or unreachable at ${config.baseUrl}.`);
+    failoverLogs.push(`🔄 [Auto-Failover] Automatically failing over task to Cloud LLM (Gemini 2.5 Flash)...`);
+
+    const cloudResult = await attemptGemini();
+    if (cloudResult && cloudResult.title) {
+      failoverLogs.push(`✅ [Auto-Failover] Cloud LLM completed compliance extraction successfully.`);
+      return {
+        parsed: cloudResult,
+        modelUsed: `Gemini 2.5 Flash (Auto-failover from Local ${config.modelId})`,
+        failoverOccurred: true,
+        failoverLogs
+      };
+    }
+
+    // If Cloud also fails or is overloaded -> FAILOVER TO STATUTORY COMPLIANCE ENGINE
+    failoverLogs.push(`⚠️ [Auto-Failover] Cloud LLM also unavailable or overloaded. Activating Statutory Procurement Heuristics Engine...`);
+  }
+
+  // Case B: Assigned to CLOUD Gemini
+  else if (config.provider === 'gemini') {
+    failoverLogs.push(`[Mastra Engine] Calling Cloud LLM: Gemini 2.5 Flash...`);
+    const cloudResult = await attemptGemini();
+
+    if (cloudResult && cloudResult.title) {
+      return {
+        parsed: cloudResult,
+        modelUsed: 'Gemini 2.5 Flash (Cloud)',
+        failoverOccurred: false,
+        failoverLogs
+      };
+    }
+
+    // Cloud failed / overloaded -> AUTOMATIC LOCAL FAILOVER
+    failoverOccurred = true;
+    failoverLogs.push(`⚠️ [Auto-Failover] Cloud LLM API overloaded or unavailable. Attempting automatic failover to local runner...`);
+
+    // Check if local Ollama / LM Studio has Llama 3.1 or Gemma
+    const localEndpoints = ['http://localhost:11434/v1', 'http://127.0.0.1:11434/v1', 'http://localhost:1234/v1'];
+    const candidates = ['llama3.1:8b', 'llama3.1', 'gemma2:9b', 'gemma2', 'meta-llama/Llama-3.1-8B-Instruct'];
+
+    let localResult: any = null;
+    let successfulCandidate = '';
+
+    for (const ep of localEndpoints) {
+      for (const cand of candidates) {
+        localResult = await attemptLocalOpenLlm(ep, cand);
+        if (localResult && localResult.title) {
+          successfulCandidate = cand;
+          break;
+        }
+      }
+      if (localResult) break;
+    }
+
+    if (localResult && localResult.title) {
+      failoverLogs.push(`✅ [Auto-Failover] Successfully failed over to local model: ${successfulCandidate}!`);
+      return {
+        parsed: localResult,
+        modelUsed: `${successfulCandidate} (Auto-failover from Cloud)`,
+        failoverOccurred: true,
+        failoverLogs
+      };
+    }
+
+    failoverLogs.push(`⚠️ [Auto-Failover] Local models offline. Engaging South African Statutory Compliance Engine (POPIA Sandboxed)...`);
   }
 
   // Deterministic South African Statutory Parsing Engine
@@ -144,33 +300,38 @@ ${rawText.slice(0, 10000)}`;
   else if (/AUDIT|CONSULTING|LEGAL|FINANCIAL/i.test(rawText)) category = 'Professional Services';
 
   return {
-    title,
-    referenceNumber: extractedRef,
-    issuingDepartment: department,
-    closingDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    cidbGrading: cidbGrading || null,
-    estimatedBudget: points === '90/10' ? 'R 55,000,000.00+ (ZAR)' : 'R 18,500,000.00 (ZAR)',
-    province,
-    category,
-    checklist: {
-      csd: csdMatch,
-      sars: sarsMatch,
-      bbbee: bbbeeMatch,
-      coida: coidaMatch,
-      compulsoryBriefing: briefingMatch,
-      subcontracting30Percent: subcontractMatch,
-      additionalDocuments: [
-        'SBD 1: Invitation to Bid Document',
-        'SBD 4: Standard Bidding Declaration of Interest',
-        'SBD 6.1: Preference Points Claim Form under Preferential Procurement Regs 2022',
-        ...(cidbGrading ? [`CIDB Proof of Registration with Active Grading ${cidbGrading}`] : []),
-        ...(coidaMatch ? ['COIDA Valid Letter of Good Standing (Compensation Commissioner / FEM)'] : []),
-        'Certified Copy of CIPC Company Registration Documents',
-        'Certified Identity Documents of all active Directors/Members'
-      ]
+    parsed: {
+      title,
+      referenceNumber: extractedRef,
+      issuingDepartment: department,
+      closingDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      cidbGrading: cidbGrading || null,
+      estimatedBudget: points === '90/10' ? 'R 55,000,000.00+ (ZAR)' : 'R 18,500,000.00 (ZAR)',
+      province,
+      category,
+      checklist: {
+        csd: csdMatch,
+        sars: sarsMatch,
+        bbbee: bbbeeMatch,
+        coida: coidaMatch,
+        compulsoryBriefing: briefingMatch,
+        subcontracting30Percent: subcontractMatch,
+        additionalDocuments: [
+          'SBD 1: Invitation to Bid Document',
+          'SBD 4: Standard Bidding Declaration of Interest',
+          'SBD 6.1: Preference Points Claim Form under Preferential Procurement Regs 2022',
+          ...(cidbGrading ? [`CIDB Proof of Registration with Active Grading ${cidbGrading}`] : []),
+          ...(coidaMatch ? ['COIDA Valid Letter of Good Standing (Compensation Commissioner / FEM)'] : []),
+          'Certified Copy of CIPC Company Registration Documents',
+          'Certified Identity Documents of all active Directors/Members'
+        ]
+      },
+      points,
+      technicalThreshold: 70
     },
-    points,
-    technicalThreshold: 70
+    modelUsed: 'Statutory Procurement Heuristics Engine (Offline Safe)',
+    failoverOccurred: true,
+    failoverLogs
   };
 }
 
@@ -183,7 +344,8 @@ export { generateBidResponseSkeleton };
 export async function executeRfpPipeline({
   rawText,
   referenceId,
-  companyProfile
+  companyProfile,
+  llmConfig
 }: ParseExecutionPayload): Promise<PipelineExecutionResult> {
   const startTime = Date.now();
   const traceLogs: string[] = [];
@@ -215,29 +377,60 @@ export async function executeRfpPipeline({
   addTrace(`[Sentry Trace] Initializing transaction span: "RFP Upload Ingestion Channel" (op: agent.pipeline)`);
   const rootSpan = createSpan('RFP Ingestion Pipeline Execution', 'agent.pipeline', 'End-to-end ingestion and compliance parsing');
 
+  // Automatic PDF Binary Detection & Decoding
+  let workingText = rawText;
+  let activeRefId = referenceId;
+  if (isRawPdfString(rawText)) {
+    addTrace(`[PDF Engine] Detected raw binary PDF document stream (%PDF-1.x). Running PDFParse stream extraction...`);
+    const pdfSpan = createSpan('PDF Stream Text Extraction', 'agent.pipeline', 'Extract readable text from PDF binary');
+    try {
+      const parsed = await parseRawPdfString(rawText);
+      if (parsed.success && parsed.text) {
+        workingText = parsed.text;
+        finalizeSpan(pdfSpan, 'success', { pageCount: parsed.pageCount, extractedChars: workingText.length });
+        addTrace(`[PDF Engine] Decoded ${parsed.pageCount} PDF pages (${workingText.length} characters) successfully.`);
+        if (parsed.referenceGuess && (!activeRefId || activeRefId.startsWith('RFP-ZA-'))) {
+          activeRefId = parsed.referenceGuess;
+        }
+      } else {
+        finalizeSpan(pdfSpan, 'failed', { error: parsed.error });
+        addTrace(`[PDF Engine] Fallback: using raw text (${parsed.error}).`);
+      }
+    } catch (e: any) {
+      finalizeSpan(pdfSpan, 'failed', { error: e.message });
+    }
+  }
+
   // POPIA Sandboxing Step
   addTrace(`[POPIA Sandbox] Enforcing Protection of Personal Information Act boundary. Redacting bank identifiers & masking raw PII...`);
   const popiaSpan = createSpan('POPIA Data Sanitization & Compliance Verification', 'popia.sanitize', 'Scrub sensitive SME data');
-  // Clean rawText for security
-  const sanitizedText = rawText.replace(/\b(?:\d[ -]*?){13,16}\b/g, '[CONFIDENTIAL_POPIA_REDACTED]');
+  // Clean workingText for security
+  const sanitizedText = workingText.replace(/\b(?:\d[ -]*?){13,16}\b/g, '[CONFIDENTIAL_POPIA_REDACTED]');
   await new Promise(r => setTimeout(r, 60));
-  finalizeSpan(popiaSpan, 'success', { bytesSanitized: rawText.length, popiaStandard: 'Act 4 of 2013' });
+  finalizeSpan(popiaSpan, 'success', { bytesSanitized: workingText.length, popiaStandard: 'Act 4 of 2013' });
   addTrace(`[POPIA Sandbox] Ingestion pipeline isolated in POPIA Sandboxed Container Mode.`);
 
-  // Gemma 2 LLM Extraction Step
-  addTrace(`[Mastra Engine] Booting localized agent context using Gemma 2 / Gemini micro-service...`);
-  addTrace(`[Sentry Trace] Triggering sub-span execution loop: "Gemma 2 Information Extraction Tactic" (op: agent.llm.call)`);
-  const extractionSpan = createSpan('Gemma 2 Information Extraction Tactic', 'agent.llm.call', 'LLM structural inference for South African RFP criteria');
+  // Gemma 2 / Llama 3.1 8B LLM Extraction Step
+  addTrace(`[Mastra Engine] Booting localized agent context using active LLM (${activeLlmConfig.modelId})...`);
+  addTrace(`[Sentry Trace] Triggering sub-span execution loop: "${activeLlmConfig.provider} Information Extraction Tactic" (op: agent.llm.call)`);
+  const extractionSpan = createSpan(`${activeLlmConfig.provider} Information Extraction Tactic`, 'agent.llm.call', 'LLM structural inference for South African RFP criteria');
 
   let extractedData: any;
+  let modelUsedName = activeLlmConfig.modelId;
   try {
-    extractedData = await extractComplianceWithGemma(sanitizedText, referenceId);
+    const extractionResult = await extractComplianceWithGemma(sanitizedText, activeRefId, llmConfig);
+    extractedData = extractionResult.parsed;
+    modelUsedName = extractionResult.modelUsed;
+    if (extractionResult.failoverLogs?.length) {
+      extractionResult.failoverLogs.forEach(l => addTrace(l));
+    }
     finalizeSpan(extractionSpan, 'success', {
-      model: process.env.GEMINI_API_KEY ? 'gemini-2.5-flash (Gemma prompt persona)' : 'gemma2-local-engine',
+      model: modelUsedName,
       tokensAnalyzed: Math.min(sanitizedText.length, 12000),
-      detectedCategory: extractedData.category
+      detectedCategory: extractedData.category,
+      failoverOccurred: extractionResult.failoverOccurred
     });
-    addTrace(`[Gemma AI Core] Extracted procurement criteria: "${extractedData.title}" (${extractedData.referenceNumber})`);
+    addTrace(`[${modelUsedName}] Extracted procurement criteria: "${extractedData.title}" (${extractedData.referenceNumber})`);
     addTrace(`[Mastra Engine] Matched criteria against National Treasury PPPFA standard constraints (Allocation: ${extractedData.points}).`);
   } catch (error: any) {
     finalizeSpan(extractionSpan, 'failed', { error: error.message });
@@ -326,6 +519,7 @@ export async function executeRfpPipeline({
     record: savedRecord,
     traceLogs,
     spans,
-    skeleton
+    skeleton,
+    usedModel: modelUsedName
   };
 }

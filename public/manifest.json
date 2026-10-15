@@ -1,0 +1,75 @@
+{
+  "name": "TenderAgent - South African RFP Automation",
+  "short_name": "TenderAgent",
+  "description": "Analyze South African public and corporate RFPs for CSD, SARS, B-BBEE, and CIDB compliance and build structured bid response skeletons.",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#059669",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "en-ZA",
+  "categories": [
+    "business",
+    "finance",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/tenderagentfavicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "RFP Analyzer",
+      "short_name": "Analyzer",
+      "description": "Upload and parse tender specifications",
+      "url": "/?tab=analyzer",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "eTender Feed",
+      "short_name": "eTenders",
+      "description": "Live Western Cape & national public tenders",
+      "url": "/?tab=discovery",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "80/20 Calculator",
+      "short_name": "Calculator",
+      "description": "PPPFA 2022 preference points math",
+      "url": "/?tab=calculator",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

@@ -33,6 +33,18 @@ Generates institutional-grade, 4-section procurement response document structure
 3.  **Commercial Presentation & Price Schedule** (Auto-calculates standard **15% ZAR VAT** line items).
 4.  **Mandatory Returnable Compliance Index** (Maps out fields for Standard Bidding Documents: **SBD 1, SBD 4, SBD 6.1, SBD 8, and SBD 9**).
 
+### 🤖 4. Local Model Detection & Automatic Cloud Failover
+*   **Zero-Config Local Auto-Detection:** Automatically scans local Ollama (`localhost:11434`) and LM Studio (`localhost:1234`) instances for local models like **Gemma 2**, **Llama 3.1 8B**, and **Mistral**.
+*   **Automatic Cloud Failover:** If local inference is offline, unconfigured, or encounters latency spikes, requests seamlessly failover to Google Gemini 2.5 Pro / Flash cloud endpoints with real-time health indicator badges.
+*   **Local Privacy Mode:** Air-gapped compliance processing ensures strategic pricing and company IP remain strictly on-device.
+
+### 🧠 5. Fine-Tuning Studio (SME Domain Specialization)
+*   Provides structured fine-tuning pipelines for South African procurement domain adaptation (PPPFA 2022, CIDB guidelines, SBD 1–9 statutory forms).
+*   Generates HuggingFace-compatible JSONL instruction-tuning pairs and exports LoRA / QLoRA training recipes tailored for Gemma 2 (2B/9B) and Llama 3.1 8B.
+
+### 📱 6. Mobile PWA & Offline Support
+*   Full **Progressive Web App (PWA)** implementation with install banners, offline service worker caching (`sw.js`), and standalone home-screen launch for Android, iOS Safari, and Desktop.
+
 ---
 
 ## 🛠️ Tech Stack & Partner Integrations
