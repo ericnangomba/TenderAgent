@@ -71,7 +71,7 @@ export async function detectLocalModels(customEndpoint?: string): Promise<ILocal
   let activeRunner: 'ollama' | 'lmstudio' | 'vllm' | 'custom' | undefined;
   let activeEndpoint: string | undefined;
 
-  const endpointsToTest = customEndpoint 
+  const endpointsToTest = customEndpoint
     ? [{ url: customEndpoint, runner: 'custom' as const, type: 'openai' }, ...COMMON_LOCAL_ENDPOINTS]
     : COMMON_LOCAL_ENDPOINTS;
 
@@ -106,7 +106,7 @@ export async function detectLocalModels(customEndpoint?: string): Promise<ILocal
         }
         break; // Found active Ollama server
       }
-    } 
+    }
     // 2. OpenAI-compatible local servers (LM Studio, vLLM, custom)
     else {
       const probe = await probeEndpoint(`${ep.url}/v1/models`);

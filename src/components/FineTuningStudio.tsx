@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Cpu, Database, Sparkles, Play, CheckCircle2, RefreshCw, Download, 
+import {
+  Cpu, Database, Sparkles, Play, CheckCircle2, RefreshCw, Download,
   Layers, Terminal, Award, FileText, ChevronRight, Sliders, ArrowRight,
   TrendingDown, Check, AlertCircle, HardDrive, BarChart3, Plus, X
 } from 'lucide-react';
@@ -216,7 +216,7 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      
+
       {/* Top Banner Header */}
       <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 relative overflow-hidden`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -251,11 +251,10 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
             <a
               href="/api/finetune/export-script"
               download="train_lora_sa_tenders.py"
-              className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg border transition-colors ${
-                isDarkMode 
-                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' 
+              className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg border transition-colors ${isDarkMode
+                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
                   : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-              }`}
+                }`}
               title="Download standalone PyTorch training script for RunPod / Colab / Local GPU"
             >
               <Download className="w-3.5 h-3.5" />
@@ -279,11 +278,10 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 text-xs font-semibold">
         <button
           onClick={() => setActiveSubTab('datasets')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-            activeSubTab === 'datasets'
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${activeSubTab === 'datasets'
               ? 'bg-emerald-600 text-white shadow-xs'
               : isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
+            }`}
         >
           <Database className="w-4 h-4" />
           <span>1. Datasets & Instruction Pairs ({activeDataset?.examples?.length || 0})</span>
@@ -291,11 +289,10 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
 
         <button
           onClick={() => setActiveSubTab('training')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-            activeSubTab === 'training'
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${activeSubTab === 'training'
               ? 'bg-emerald-600 text-white shadow-xs'
               : isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
+            }`}
         >
           <Sliders className="w-4 h-4" />
           <span>2. LoRA Training & Live Curves</span>
@@ -303,11 +300,10 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
 
         <button
           onClick={() => setActiveSubTab('playground')}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
-            activeSubTab === 'playground'
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${activeSubTab === 'playground'
               ? 'bg-emerald-600 text-white shadow-xs'
               : isDarkMode ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-          }`}
+            }`}
         >
           <BarChart3 className="w-4 h-4" />
           <span>3. Side-by-Side Model Evaluation</span>
@@ -323,15 +319,14 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
               <div
                 key={d.id}
                 onClick={() => setSelectedDatasetId(d.id)}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  selectedDatasetId === d.id
-                    ? isDarkMode 
+                className={`p-4 rounded-xl border cursor-pointer transition-all ${selectedDatasetId === d.id
+                    ? isDarkMode
                       ? 'bg-emerald-950/40 border-emerald-600 text-white shadow-sm'
                       : 'bg-emerald-50/80 border-emerald-400 text-slate-900 shadow-sm'
                     : isDarkMode
                       ? 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                       : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 shadow-xs'
-                }`}
+                  }`}
               >
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold text-xs truncate max-w-[200px]">{d.name}</span>
@@ -377,9 +372,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
             {activeDataset?.examples?.map((ex, i) => (
               <div
                 key={ex.id || i}
-                className={`p-4 rounded-xl border text-xs ${
-                  isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
-                }`}
+                className={`p-4 rounded-xl border text-xs ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
+                  }`}
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -400,17 +394,15 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* Prompt */}
-                  <div className={`p-3 rounded-lg border font-mono text-[11px] leading-relaxed ${
-                    isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-800'
-                  }`}>
+                  <div className={`p-3 rounded-lg border font-mono text-[11px] leading-relaxed ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-800'
+                    }`}>
                     <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Instruction / Prompt:</div>
                     {ex.prompt}
                   </div>
 
                   {/* Completion */}
-                  <div className={`p-3 rounded-lg border font-mono text-[11px] leading-relaxed overflow-x-auto ${
-                    isDarkMode ? 'bg-emerald-950/20 border-emerald-900/60 text-emerald-300' : 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
-                  }`}>
+                  <div className={`p-3 rounded-lg border font-mono text-[11px] leading-relaxed overflow-x-auto ${isDarkMode ? 'bg-emerald-950/20 border-emerald-900/60 text-emerald-300' : 'bg-emerald-50/60 border-emerald-200 text-emerald-950'
+                    }`}>
                     <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1">Target Completion (Ground Truth):</div>
                     <pre className="whitespace-pre-wrap">{ex.completion}</pre>
                   </div>
@@ -424,7 +416,7 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
       {/* ==================== TAB 2: TRAINING & LIVE CURVES ==================== */}
       {activeSubTab === 'training' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
+
           {/* Left: Hyperparameter Configuration */}
           <div className="lg:col-span-5 space-y-4">
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-5`}>
@@ -442,9 +434,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                   <select
                     value={baseModel}
                     onChange={(e: any) => setBaseModel(e.target.value)}
-                    className={`w-full border rounded-lg p-2 font-mono text-xs ${
-                      isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
-                    }`}
+                    className={`w-full border rounded-lg p-2 font-mono text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
+                      }`}
                   >
                     <option value="meta-llama/Meta-Llama-3.1-8B-Instruct">Meta Llama 3.1 8B Instruct (Recommended)</option>
                     <option value="google/gemma-2-9b-it">Google Gemma 2 9B Instruct (Local Runner)</option>
@@ -461,9 +452,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                       onChange={(e) => setLoraRank(Number(e.target.value))}
                       min={4}
                       max={64}
-                      className={`w-full border rounded-lg p-2 font-mono text-xs ${
-                        isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
-                      }`}
+                      className={`w-full border rounded-lg p-2 font-mono text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
+                        }`}
                     />
                   </div>
                   <div>
@@ -474,9 +464,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                       onChange={(e) => setLoraAlpha(Number(e.target.value))}
                       min={8}
                       max={128}
-                      className={`w-full border rounded-lg p-2 font-mono text-xs ${
-                        isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
-                      }`}
+                      className={`w-full border rounded-lg p-2 font-mono text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
+                        }`}
                     />
                   </div>
                 </div>
@@ -491,9 +480,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                       onChange={(e) => setEpochs(Number(e.target.value))}
                       min={1}
                       max={10}
-                      className={`w-full border rounded-lg p-2 font-mono text-xs ${
-                        isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
-                      }`}
+                      className={`w-full border rounded-lg p-2 font-mono text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
+                        }`}
                     />
                   </div>
                   <div>
@@ -502,17 +490,15 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                       type="text"
                       value={learningRate}
                       onChange={(e) => setLearningRate(e.target.value)}
-                      className={`w-full border rounded-lg p-2 font-mono text-xs ${
-                        isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
-                      }`}
+                      className={`w-full border rounded-lg p-2 font-mono text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
+                        }`}
                     />
                   </div>
                 </div>
 
                 {/* Quantization & Hardware Info */}
-                <div className={`p-3 rounded-lg border text-[11px] leading-relaxed ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
-                }`}>
+                <div className={`p-3 rounded-lg border text-[11px] leading-relaxed ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}>
                   <div className="font-semibold text-emerald-600 mb-1 flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>NF4 8-bit Quantized QLoRA Enabled</span>
@@ -542,19 +528,17 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                   <div
                     key={j.id}
                     onClick={() => setSelectedJob(j)}
-                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                      selectedJob?.id === j.id
+                    className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedJob?.id === j.id
                         ? isDarkMode ? 'bg-slate-800 border-emerald-500 text-white' : 'bg-emerald-50 border-emerald-400 text-slate-900'
                         : isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between font-bold mb-1">
                       <span>{j.outputModelName}</span>
-                      <span className={`px-2 py-0.2 rounded text-[10px] font-mono ${
-                        j.status === 'completed' 
+                      <span className={`px-2 py-0.2 rounded text-[10px] font-mono ${j.status === 'completed'
                           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
                           : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
-                      }`}>
+                        }`}>
                         {j.status}
                       </span>
                     </div>
@@ -594,9 +578,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
 
               {/* Progress & VRAM Gauge */}
               <div className="grid grid-cols-3 gap-3 mb-5">
-                <div className={`p-3 rounded-lg border text-center ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-                }`}>
+                <div className={`p-3 rounded-lg border text-center ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
                   <div className="text-[10px] text-slate-400 uppercase font-semibold mb-1">Convergence Loss</div>
                   <div className="text-xl font-bold font-mono text-emerald-600">
                     {selectedJob?.currentLoss || '0.312'}
@@ -604,9 +587,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                   <div className="text-[10px] text-slate-500">Target &lt; 0.400</div>
                 </div>
 
-                <div className={`p-3 rounded-lg border text-center ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-                }`}>
+                <div className={`p-3 rounded-lg border text-center ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
                   <div className="text-[10px] text-slate-400 uppercase font-semibold mb-1">GPU VRAM Usage</div>
                   <div className="text-xl font-bold font-mono text-purple-600 dark:text-purple-400">
                     {selectedJob?.vramUsageGb || 7.4} GB
@@ -614,9 +596,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                   <div className="text-[10px] text-slate-500">8-bit Paged Optimizer</div>
                 </div>
 
-                <div className={`p-3 rounded-lg border text-center ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-                }`}>
+                <div className={`p-3 rounded-lg border text-center ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
                   <div className="text-[10px] text-slate-400 uppercase font-semibold mb-1">Total Steps</div>
                   <div className="text-xl font-bold font-mono text-amber-600 dark:text-amber-400">
                     {selectedJob?.currentStep || 60} / {selectedJob?.totalSteps || 60}
@@ -626,9 +607,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
               </div>
 
               {/* SVG Loss Curve Chart */}
-              <div className={`p-4 rounded-xl border ${
-                isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-              }`}>
+              <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
                 <div className="flex items-center justify-between text-xs font-semibold mb-3">
                   <div className="flex items-center gap-1.5">
                     <TrendingDown className="w-4 h-4 text-emerald-600" />
@@ -732,9 +712,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                 value={playgroundPrompt}
                 onChange={(e) => setPlaygroundPrompt(e.target.value)}
                 rows={3}
-                className={`w-full border rounded-lg p-2.5 text-xs font-mono resize-none focus:outline-none focus:border-emerald-500 ${
-                  isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
-                }`}
+                className={`w-full border rounded-lg p-2.5 text-xs font-mono resize-none focus:outline-none focus:border-emerald-500 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-800'
+                  }`}
               />
 
               {/* Quick Preset Prompts */}
@@ -766,11 +745,10 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
 
             {/* Comparison Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              
+
               {/* Baseline Column */}
-              <div className={`p-4 rounded-xl border ${
-                isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-              }`}>
+              <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold text-xs text-slate-500">Raw Baseline Model</span>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-400">
@@ -785,9 +763,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
               </div>
 
               {/* Fine-Tuned Column */}
-              <div className={`p-4 rounded-xl border ${
-                isDarkMode ? 'bg-emerald-950/20 border-emerald-900/60' : 'bg-emerald-50/70 border-emerald-300'
-              }`}>
+              <div className={`p-4 rounded-xl border ${isDarkMode ? 'bg-emerald-950/20 border-emerald-900/60' : 'bg-emerald-50/70 border-emerald-300'
+                }`}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
@@ -812,9 +789,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
       {/* Add Example Modal */}
       {isAddExampleOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`w-full max-w-lg rounded-xl border p-5 shadow-2xl ${
-            isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
-          }`}>
+          <div className={`w-full max-w-lg rounded-xl border p-5 shadow-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+            }`}>
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-slate-800">
               <h3 className="font-bold text-sm">Add Training Pair to Dataset</h3>
               <button onClick={() => setIsAddExampleOpen(false)} className="text-slate-400 hover:text-slate-200">
@@ -828,9 +804,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                 <select
                   value={newDomain}
                   onChange={(e: any) => setNewDomain(e.target.value)}
-                  className={`w-full border rounded-lg p-2 ${
-                    isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
-                  }`}
+                  className={`w-full border rounded-lg p-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                    }`}
                 >
                   <option value="PPPFA 2022">PPPFA 2022 (Preference Points)</option>
                   <option value="CIDB Act">CIDB Act (Construction Grading)</option>
@@ -847,9 +822,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                   onChange={(e) => setNewPrompt(e.target.value)}
                   rows={3}
                   placeholder="e.g. Determine evaluation points system for tender value R18,000,000..."
-                  className={`w-full border rounded-lg p-2 font-mono ${
-                    isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
-                  }`}
+                  className={`w-full border rounded-lg p-2 font-mono ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                    }`}
                 />
               </div>
 
@@ -860,9 +834,8 @@ export const FineTuningStudio: React.FC<FineTuningStudioProps> = ({ isDarkMode =
                   onChange={(e) => setNewCompletion(e.target.value)}
                   rows={4}
                   placeholder='e.g. { "system": "80/20", "threshold": "Under R50M" }'
-                  className={`w-full border rounded-lg p-2 font-mono ${
-                    isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
-                  }`}
+                  className={`w-full border rounded-lg p-2 font-mono ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                    }`}
                 />
               </div>
 

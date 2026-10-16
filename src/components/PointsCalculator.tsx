@@ -58,7 +58,7 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      
+
       {/* Header Banner */}
       <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -80,26 +80,23 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
           </div>
 
           {/* System Toggle (80/20 vs 90/10) */}
-          <div className={`flex items-center p-1 rounded-lg shrink-0 border ${
-            isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'
-          }`}>
+          <div className={`flex items-center p-1 rounded-lg shrink-0 border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'
+            }`}>
             <button
               onClick={() => setSystem('80/20')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                system === '80/20'
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${system === '80/20'
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               80/20 System (&le; R50M)
             </button>
             <button
               onClick={() => setSystem('90/10')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                system === '90/10'
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${system === '90/10'
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               90/10 System (&gt; R50M)
             </button>
@@ -109,7 +106,7 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
 
       {/* Main Calculator Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
+
         {/* Left Form: Pricing & Parameters */}
         <div className="lg:col-span-7 space-y-4">
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 space-y-5`}>
@@ -131,11 +128,10 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
                   step="50000"
                   value={minPrice}
                   onChange={(e) => setMinPrice(Number(e.target.value))}
-                  className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${
-                    isDarkMode 
-                      ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                  className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
+                      ? 'bg-slate-950 border-slate-800 text-slate-200'
                       : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                  }`}
+                    }`}
                 />
                 <span className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'} mt-0.5 block`}>
                   The benchmark lowest responsive bid submitted in this tender process.
@@ -153,11 +149,10 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
                   step="50000"
                   value={userPrice}
                   onChange={(e) => setUserPrice(Number(e.target.value))}
-                  className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${
-                    isDarkMode 
-                      ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                  className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
+                      ? 'bg-slate-950 border-slate-800 text-slate-200'
                       : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                  }`}
+                    }`}
                 />
                 <span className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'} mt-0.5 block`}>
                   Your bid price inclusive of 15% VAT and all contingencies.
@@ -178,15 +173,14 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
                       key={lvl}
                       type="button"
                       onClick={() => setBbbeeLevel(lvl)}
-                      className={`p-2 rounded-lg text-center transition-all border ${
-                        bbbeeLevel === lvl
+                      className={`p-2 rounded-lg text-center transition-all border ${bbbeeLevel === lvl
                           ? isDarkMode
                             ? 'bg-emerald-950 border-emerald-700 text-emerald-300 font-bold'
                             : 'bg-emerald-50 border-emerald-400 text-emerald-800 font-bold shadow-2xs'
                           : isDarkMode
                             ? 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                             : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                      }`}
+                        }`}
                     >
                       <div className="text-[11px]">Lvl {lvl}</div>
                       <div className={`text-[9px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{getBbbeePoints(lvl, system)} pts</div>
@@ -209,11 +203,10 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
                       step="50000"
                       value={competitorPrice}
                       onChange={(e) => setCompetitorPrice(Number(e.target.value))}
-                      className={`w-full border rounded px-2.5 py-1.5 text-xs font-mono focus:outline-none ${
-                        isDarkMode 
-                          ? 'bg-slate-950 border-slate-800 text-slate-200 focus:border-slate-600' 
+                      className={`w-full border rounded px-2.5 py-1.5 text-xs font-mono focus:outline-none ${isDarkMode
+                          ? 'bg-slate-950 border-slate-800 text-slate-200 focus:border-slate-600'
                           : 'bg-slate-50 border-slate-300 text-slate-800 focus:border-slate-400'
-                      }`}
+                        }`}
                     />
                   </div>
                   <div>
@@ -221,11 +214,10 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
                     <select
                       value={competitorBbbee}
                       onChange={(e) => setCompetitorBbbee(Number(e.target.value))}
-                      className={`w-full border rounded px-2.5 py-1.5 text-xs focus:outline-none ${
-                        isDarkMode 
-                          ? 'bg-slate-950 border-slate-800 text-slate-200 focus:border-slate-600' 
+                      className={`w-full border rounded px-2.5 py-1.5 text-xs focus:outline-none ${isDarkMode
+                          ? 'bg-slate-950 border-slate-800 text-slate-200 focus:border-slate-600'
                           : 'bg-slate-50 border-slate-300 text-slate-800 focus:border-slate-400'
-                      }`}
+                        }`}
                     >
                       {[1, 2, 3, 4, 5, 6, 7, 8].map((l) => (
                         <option key={l} value={l}>Level {l} ({getBbbeePoints(l, system)} pts)</option>
@@ -239,16 +231,14 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
           </div>
 
           {/* Mathematical Proof Card */}
-          <div className={`border rounded-xl p-4 font-mono text-xs space-y-2 ${
-            isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
-          }`}>
+          <div className={`border rounded-xl p-4 font-mono text-xs space-y-2 ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
+            }`}>
             <div className={`flex items-center gap-1.5 font-semibold text-[11px] ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
               <Info className="w-3.5 h-3.5 text-emerald-600" />
               <span>National Treasury PPPFA Statutory Formula (PPR 2022)</span>
             </div>
-            <p className={`text-[11px] p-2 rounded border ${
-              isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-800'
-            }`}>
+            <p className={`text-[11px] p-2 rounded border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-800'
+              }`}>
               Ps = {system === '80/20' ? '80' : '90'} &times; [ 1 - ( Pt - Pmin ) / Pmin ] + Specific Goals
             </p>
             <p className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -259,7 +249,7 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
 
         {/* Right Card: Score Outcome & Head-to-Head Comparison */}
         <div className="lg:col-span-5 space-y-4">
-          
+
           {/* Your Score Card */}
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6`}>
             <div className="flex items-center justify-between mb-4">
@@ -274,17 +264,15 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
             </div>
 
             <div className="space-y-2.5 mb-5 text-xs">
-              <div className={`flex items-center justify-between p-2 rounded border ${
-                isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-              }`}>
+              <div className={`flex items-center justify-between p-2 rounded border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
                 <span className={isDarkMode ? 'text-slate-400' : 'text-slate-600'}>Price Points (Commercial):</span>
                 <span className={`font-mono font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   {userPricePoints} / {system === '80/20' ? 80 : 90}
                 </span>
               </div>
-              <div className={`flex items-center justify-between p-2 rounded border ${
-                isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-              }`}>
+              <div className={`flex items-center justify-between p-2 rounded border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
                 <span className={isDarkMode ? 'text-slate-400' : 'text-slate-600'}>Specific Goals (B-BBEE Lvl {bbbeeLevel}):</span>
                 <span className="font-mono font-bold text-emerald-600">
                   {userBbbeePoints} / {system === '80/20' ? 20 : 10}
@@ -293,12 +281,10 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
             </div>
 
             {/* Head to head comparative */}
-            <div className={`p-3.5 rounded-lg border space-y-2 ${
-              isDarkMode ? 'bg-slate-950 border-slate-800/80' : 'bg-slate-50 border-slate-200'
-            }`}>
-              <div className={`text-[11px] font-semibold flex items-center justify-between ${
-                isDarkMode ? 'text-slate-300' : 'text-slate-700'
+            <div className={`p-3.5 rounded-lg border space-y-2 ${isDarkMode ? 'bg-slate-950 border-slate-800/80' : 'bg-slate-50 border-slate-200'
               }`}>
+              <div className={`text-[11px] font-semibold flex items-center justify-between ${isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                }`}>
                 <span>Head-to-Head Outcome:</span>
                 <span className={userTotalPoints >= compTotalPoints ? 'text-emerald-600' : 'text-amber-600'}>
                   {userTotalPoints >= compTotalPoints ? 'Tender Award Advantage' : 'Trailing on Points'}
@@ -306,15 +292,13 @@ export const PointsCalculator: React.FC<PointsCalculatorProps> = ({
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className={`p-2 rounded text-center border ${
-                  isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-2xs'
-                }`}>
+                <div className={`p-2 rounded text-center border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-2xs'
+                  }`}>
                   <span className={`block text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Your Bid</span>
                   <span className={`font-mono font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{userTotalPoints}</span>
                 </div>
-                <div className={`p-2 rounded text-center border ${
-                  isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-2xs'
-                }`}>
+                <div className={`p-2 rounded text-center border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-2xs'
+                  }`}>
                   <span className={`block text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Competitor</span>
                   <span className={`font-mono font-bold text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{compTotalPoints}</span>
                 </div>

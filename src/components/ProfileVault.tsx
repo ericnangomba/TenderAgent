@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { 
-  Building2, ShieldCheck, CheckCircle2, AlertCircle, Save, Lock, 
+import {
+  Building2, ShieldCheck, CheckCircle2, AlertCircle, Save, Lock,
   FileCheck, Shield, Award, Calendar, Phone, Mail, MapPin, Check
 } from 'lucide-react';
 import { IUserProfile } from '../lib/types/tender';
@@ -11,8 +11,8 @@ interface ProfileVaultProps {
   isDarkMode?: boolean;
 }
 
-export const ProfileVault: React.FC<ProfileVaultProps> = ({ 
-  userProfile, 
+export const ProfileVault: React.FC<ProfileVaultProps> = ({
+  userProfile,
   onUpdateProfile,
   isDarkMode = false
 }) => {
@@ -61,7 +61,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      
+
       {/* Header Banner */}
       <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -83,9 +83,8 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <div className={`p-2.5 rounded-lg border text-center ${
-              isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-            }`}>
+            <div className={`p-2.5 rounded-lg border text-center ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
               <span className={`text-[10px] uppercase font-semibold block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Readiness</span>
               <span className="text-sm font-bold font-mono text-emerald-600">{readinessPct}% Compliant</span>
             </div>
@@ -96,13 +95,12 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
       {/* Main Form */}
       <form onSubmit={handleSave} className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          
+
           {/* Left Column: Statutory Credentials */}
           <div className="lg:col-span-7 space-y-5">
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 space-y-4`}>
-              <h3 className={`text-sm font-semibold flex items-center gap-2 border-b pb-3 ${
-                isDarkMode ? 'text-white border-slate-800' : 'text-slate-900 border-slate-200'
-              }`}>
+              <h3 className={`text-sm font-semibold flex items-center gap-2 border-b pb-3 ${isDarkMode ? 'text-white border-slate-800' : 'text-slate-900 border-slate-200'
+                }`}>
                 <FileCheck className="w-4 h-4 text-emerald-600" />
                 <span>Statutory Government Credentials (Mandatory Returnables)</span>
               </h3>
@@ -117,11 +115,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   required
                   value={formData.companyName}
                   onChange={(e) => handleChange('companyName', e.target.value)}
-                  className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${
-                    isDarkMode 
-                      ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                  className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${isDarkMode
+                      ? 'bg-slate-950 border-slate-800 text-slate-200'
                       : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                  }`}
+                    }`}
                 />
               </div>
 
@@ -137,11 +134,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                     placeholder="2023/123456/07"
                     value={formData.registrationNumber}
                     onChange={(e) => handleChange('registrationNumber', e.target.value)}
-                    className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${
-                      isDarkMode 
-                        ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                    className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
                         : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                    }`}
+                      }`}
                   />
                 </div>
 
@@ -156,11 +152,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                     placeholder="MAAA0821945"
                     value={formData.csdNumber}
                     onChange={(e) => handleChange('csdNumber', e.target.value.toUpperCase())}
-                    className={`w-full border rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-emerald-500 ${
-                      isDarkMode 
-                        ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                    className={`w-full border rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-emerald-500 ${isDarkMode
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
                         : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                    }`}
+                      }`}
                   />
                 </div>
               </div>
@@ -177,11 +172,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                     placeholder="TCS-9482104-Z"
                     value={formData.taxComplianceStatusPin}
                     onChange={(e) => handleChange('taxComplianceStatusPin', e.target.value)}
-                    className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${
-                      isDarkMode 
-                        ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                    className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
                         : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                    }`}
+                      }`}
                   />
                 </div>
 
@@ -194,11 +188,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                     placeholder="e.g. 7CE PE or 1GB"
                     value={formData.cidbGrading}
                     onChange={(e) => handleChange('cidbGrading', e.target.value)}
-                    className={`w-full border rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-emerald-500 ${
-                      isDarkMode 
-                        ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                    className={`w-full border rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-emerald-500 ${isDarkMode
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
                         : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                    }`}
+                      }`}
                   />
                 </div>
               </div>
@@ -212,11 +205,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   <select
                     value={formData.bbbeeLevel}
                     onChange={(e) => handleChange('bbbeeLevel', Number(e.target.value))}
-                    className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${
-                      isDarkMode 
-                        ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                    className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${isDarkMode
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
                         : 'bg-slate-50 border-slate-300 text-slate-800'
-                    }`}
+                      }`}
                   >
                     {[1, 2, 3, 4, 5, 6, 7, 8].map(lvl => (
                       <option key={lvl} value={lvl}>Level {lvl} (135% recognition for L1)</option>
@@ -231,11 +223,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   <select
                     value={formData.bbbeeType}
                     onChange={(e) => handleChange('bbbeeType', e.target.value as any)}
-                    className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${
-                      isDarkMode 
-                        ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                    className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${isDarkMode
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
                         : 'bg-slate-50 border-slate-300 text-slate-800'
-                    }`}
+                      }`}
                   >
                     <option value="EME">EME (Exempted Micro Enterprise &le; R10M turnover)</option>
                     <option value="QSE">QSE (Qualifying Small Enterprise R10M - R50M)</option>
@@ -245,9 +236,8 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
               </div>
 
               {/* COIDA Status */}
-              <div className={`p-3.5 rounded-lg border space-y-2 ${
-                isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-              }`}>
+              <div className={`p-3.5 rounded-lg border space-y-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <input
@@ -257,9 +247,8 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                       onChange={(e) => handleChange('coidaGoodStandingValid', e.target.checked)}
                       className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                     />
-                    <label htmlFor="coida-check" className={`text-xs font-medium cursor-pointer ${
-                      isDarkMode ? 'text-slate-200' : 'text-slate-800'
-                    }`}>
+                    <label htmlFor="coida-check" className={`text-xs font-medium cursor-pointer ${isDarkMode ? 'text-slate-200' : 'text-slate-800'
+                      }`}>
                       COIDA Letter of Good Standing Active
                     </label>
                   </div>
@@ -273,11 +262,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                       type="date"
                       value={formData.coidaExpiryDate}
                       onChange={(e) => handleChange('coidaExpiryDate', e.target.value)}
-                      className={`border rounded px-2 py-1 text-xs focus:outline-none focus:border-emerald-500 ${
-                        isDarkMode 
-                          ? 'bg-slate-900 border-slate-800 text-slate-200' 
+                      className={`border rounded px-2 py-1 text-xs focus:outline-none focus:border-emerald-500 ${isDarkMode
+                          ? 'bg-slate-900 border-slate-800 text-slate-200'
                           : 'bg-white border-slate-300 text-slate-800'
-                      }`}
+                        }`}
                     />
                   </div>
                 )}
@@ -289,9 +277,8 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
           {/* Right Column: Contact & POPIA Security Undertaking */}
           <div className="lg:col-span-5 space-y-5">
             <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 space-y-4`}>
-              <h3 className={`text-sm font-semibold flex items-center gap-2 border-b pb-3 ${
-                isDarkMode ? 'text-white border-slate-800' : 'text-slate-900 border-slate-200'
-              }`}>
+              <h3 className={`text-sm font-semibold flex items-center gap-2 border-b pb-3 ${isDarkMode ? 'text-white border-slate-800' : 'text-slate-900 border-slate-200'
+                }`}>
                 <Building2 className="w-4 h-4 text-emerald-600" />
                 <span>Contact & Geographic Jurisdiction</span>
               </h3>
@@ -303,11 +290,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   required
                   value={formData.contactEmail}
                   onChange={(e) => handleChange('contactEmail', e.target.value)}
-                  className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${
-                    isDarkMode 
-                      ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                  className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${isDarkMode
+                      ? 'bg-slate-950 border-slate-800 text-slate-200'
                       : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                  }`}
+                    }`}
                 />
               </div>
 
@@ -318,11 +304,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   required
                   value={formData.contactPhone}
                   onChange={(e) => handleChange('contactPhone', e.target.value)}
-                  className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${
-                    isDarkMode 
-                      ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                  className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
+                      ? 'bg-slate-950 border-slate-800 text-slate-200'
                       : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                  }`}
+                    }`}
                 />
               </div>
 
@@ -331,11 +316,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                 <select
                   value={formData.province}
                   onChange={(e) => handleChange('province', e.target.value)}
-                  className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${
-                    isDarkMode 
-                      ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                  className={`w-full border rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-emerald-500 ${isDarkMode
+                      ? 'bg-slate-950 border-slate-800 text-slate-200'
                       : 'bg-slate-50 border-slate-300 text-slate-800 focus:bg-white'
-                  }`}
+                    }`}
                 >
                   <option value="Gauteng">Gauteng</option>
                   <option value="Western Cape">Western Cape</option>
@@ -350,9 +334,8 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
               </div>
 
               {/* POPIA Security Card */}
-              <div className={`p-4 rounded-lg border space-y-2 text-xs ${
-                isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
-              }`}>
+              <div className={`p-4 rounded-lg border space-y-2 text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
+                }`}>
                 <div className="flex items-center gap-1.5 font-semibold text-emerald-600 text-xs">
                   <Lock className="w-3.5 h-3.5" />
                   <span>POPIA Protection Guarantee</span>

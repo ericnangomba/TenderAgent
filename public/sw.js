@@ -53,10 +53,10 @@ self.addEventListener('fetch', (event) => {
         .catch(async () => {
           const cached = await caches.match(event.request);
           if (cached) return cached;
-          return new Response(JSON.stringify({ 
-            success: false, 
-            offline: true, 
-            message: 'You are currently offline. Displaying cached South African tender data.' 
+          return new Response(JSON.stringify({
+            success: false,
+            offline: true,
+            message: 'You are currently offline. Displaying cached South African tender data.'
           }), {
             headers: { 'Content-Type': 'application/json' }
           });

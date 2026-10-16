@@ -103,7 +103,7 @@ export default function App() {
 
   return (
     <div className={`min-h-screen flex ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} antialiased font-sans selection:bg-emerald-200 selection:text-emerald-900`}>
-      
+
       {/* Sidebar Navigation */}
       <Sidebar
         activeTab={activeTab}
@@ -117,7 +117,7 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        
+
         {/* Unclouded Clean Header */}
         <Header
           activeTab={activeTab}
@@ -193,9 +193,8 @@ export default function App() {
         </main>
 
         {/* Clean Footer */}
-        <footer className={`py-5 px-6 border-t text-xs ${
-          isDarkMode ? 'border-slate-800 bg-slate-950 text-slate-500' : 'border-slate-200 bg-white text-slate-500'
-        }`}>
+        <footer className={`py-5 px-6 border-t text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-slate-500' : 'border-slate-200 bg-white text-slate-500'
+          }`}>
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span>🇿🇦 TenderAgent Micro-SaaS</span>

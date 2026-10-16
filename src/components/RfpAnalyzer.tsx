@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { 
-  Upload, FileText, CheckCircle, ShieldAlert, Layers, RefreshCw, 
-  ChevronRight, Building, Calendar, DollarSign, Award, CheckCircle2, 
+import {
+  Upload, FileText, CheckCircle, ShieldAlert, Layers, RefreshCw,
+  ChevronRight, Building, Calendar, DollarSign, Award, CheckCircle2,
   AlertCircle, Sparkles, Terminal, FileCode, Check, ShieldCheck
 } from 'lucide-react';
 import { SAMPLE_TENDERS } from '../lib/data/sampleTenders';
@@ -169,7 +169,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
       // Auto-decode if user pasted raw PDF binary stream
       if (textToProcess.trim().startsWith('%PDF-') || (textToProcess.includes('%PDF-') && textToProcess.includes('endobj'))) {
         setTraceLogs(prev => [
-          ...prev, 
+          ...prev,
           '[PDF Engine] Detected raw binary %PDF stream in input. Auto-decoding document pages...'
         ]);
         try {
@@ -275,7 +275,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      
+
       {/* Top Banner / Context */}
       <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 relative overflow-hidden`}>
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -298,22 +298,20 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => onSwitchToCalculator('80/20', extractedData?.title || 'Active RFP')}
-              className={`px-3.5 py-2 text-xs font-medium rounded-lg border transition-colors ${
-                isDarkMode 
-                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' 
+              className={`px-3.5 py-2 text-xs font-medium rounded-lg border transition-colors ${isDarkMode
+                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
                   : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-              }`}
+                }`}
             >
               80/20 Calculator
             </button>
             <button
               onClick={() => userProfile && onOpenSkeleton(activeSkeleton || SAMPLE_TENDERS[0] as any)}
               disabled={!extractedData && !activeSkeleton}
-              className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
-                extractedData || activeSkeleton
+              className={`px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${extractedData || activeSkeleton
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-900/30'
                   : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-200 dark:bg-slate-800 dark:text-slate-500 dark:border-slate-800'
-              }`}
+                }`}
             >
               <FileCode className="w-3.5 h-3.5" />
               <span>Bid Skeleton (.docx)</span>
@@ -327,7 +325,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
       {/* Main Grid: Upload & Presets (Left) + Sentry Live Trace Stream (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
+
         {/* Left Column: RFP Ingestion Form */}
         <div className="lg:col-span-6 space-y-4">
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6`}>
@@ -358,15 +356,14 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                     key={preset.id}
                     type="button"
                     onClick={() => handleSelectPreset(idx)}
-                    className={`p-2.5 rounded-lg text-left transition-all border ${
-                      selectedPresetIndex === idx
+                    className={`p-2.5 rounded-lg text-left transition-all border ${selectedPresetIndex === idx
                         ? isDarkMode
                           ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-300 shadow-sm'
                           : 'bg-emerald-50/80 border-emerald-300 text-emerald-900 shadow-sm'
                         : isDarkMode
                           ? 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                           : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300'
-                    }`}
+                      }`}
                   >
                     <div className="font-semibold text-[11px] truncate">{preset.referenceNumber}</div>
                     <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} truncate`}>
@@ -381,11 +378,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
             </div>
 
             {/* File Upload Drag/Drop Box */}
-            <div className={`border border-dashed rounded-lg p-3.5 mb-3 text-center transition-colors ${
-              isDarkMode 
-                ? 'border-slate-700 bg-slate-950/50 hover:border-emerald-500/60' 
+            <div className={`border border-dashed rounded-lg p-3.5 mb-3 text-center transition-colors ${isDarkMode
+                ? 'border-slate-700 bg-slate-950/50 hover:border-emerald-500/60'
                 : 'border-slate-300 bg-slate-50/60 hover:border-emerald-500/60'
-            }`}>
+              }`}>
               <input
                 type="file"
                 id="rfp-file"
@@ -462,9 +458,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
             )}
 
             {/* AI Engine & Local Model Detection Bar */}
-            <div className={`p-2.5 rounded-lg border mb-4 text-xs ${
-              isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-            }`}>
+            <div className={`p-2.5 rounded-lg border mb-4 text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
               <div className="flex items-center justify-between mb-1.5">
                 <div className="flex items-center gap-1.5">
                   <Terminal className="w-3.5 h-3.5 text-emerald-600" />
@@ -488,44 +483,40 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 <button
                   type="button"
                   onClick={() => { setActiveModel('gemma2:latest'); setActiveProvider('ollama'); }}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${
-                    activeModel === 'gemma2:latest'
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${activeModel === 'gemma2:latest'
                       ? 'bg-emerald-600 text-white font-bold'
                       : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white border text-slate-700 hover:bg-slate-100'
-                  }`}
+                    }`}
                 >
                   Gemma 2 (Local)
                 </button>
                 <button
                   type="button"
                   onClick={() => { setActiveModel('llama3.1:8b'); setActiveProvider('ollama'); }}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${
-                    activeModel === 'llama3.1:8b'
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${activeModel === 'llama3.1:8b'
                       ? 'bg-emerald-600 text-white font-bold'
                       : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white border text-slate-700 hover:bg-slate-100'
-                  }`}
+                    }`}
                 >
                   Llama 3.1 8B (Open LLM)
                 </button>
                 <button
                   type="button"
                   onClick={() => { setActiveModel('gemini-2.5-flash'); setActiveProvider('gemini'); }}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${
-                    activeModel === 'gemini-2.5-flash'
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${activeModel === 'gemini-2.5-flash'
                       ? 'bg-emerald-600 text-white font-bold'
                       : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white border text-slate-700 hover:bg-slate-100'
-                  }`}
+                    }`}
                 >
                   Gemini 2.5 Flash
                 </button>
                 <button
                   type="button"
                   onClick={() => { setActiveModel('fine-tuned-sa-tender-8b'); setActiveProvider('ollama'); }}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${
-                    activeModel === 'fine-tuned-sa-tender-8b'
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium transition-colors ${activeModel === 'fine-tuned-sa-tender-8b'
                       ? 'bg-emerald-600 text-white font-bold'
                       : isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-white border text-slate-700 hover:bg-slate-100'
-                  }`}
+                    }`}
                 >
                   LoRA Fine-Tuned v1
                 </button>
@@ -541,11 +532,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   value={referenceId}
                   onChange={(e) => setReferenceId(e.target.value)}
                   placeholder="e.g. SEDA/2026/01 or RT57-2026-ICT"
-                  className={`border rounded px-2.5 py-1 text-xs font-mono flex-1 focus:outline-none focus:border-emerald-500 ${
-                    isDarkMode 
-                      ? 'bg-slate-950 border-slate-800 text-slate-200' 
+                  className={`border rounded px-2.5 py-1 text-xs font-mono flex-1 focus:outline-none focus:border-emerald-500 ${isDarkMode
+                      ? 'bg-slate-950 border-slate-800 text-slate-200'
                       : 'bg-slate-50 border-slate-300 text-slate-800'
-                  }`}
+                    }`}
                 />
               </div>
 
@@ -562,11 +552,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
                   rows={6}
-                  className={`w-full border rounded-lg p-2.5 text-xs font-mono focus:outline-none focus:border-emerald-500 leading-relaxed resize-none ${
-                    isDarkMode 
-                      ? 'bg-slate-950 border-slate-800 text-slate-300' 
+                  className={`w-full border rounded-lg p-2.5 text-xs font-mono focus:outline-none focus:border-emerald-500 leading-relaxed resize-none ${isDarkMode
+                      ? 'bg-slate-950 border-slate-800 text-slate-300'
                       : 'bg-slate-50 border-slate-300 text-slate-800'
-                  } ${isRawPdfStream ? 'border-amber-500/60' : ''}`}
+                    } ${isRawPdfStream ? 'border-amber-500/60' : ''}`}
                   placeholder="Paste government or corporate RFP text here, or paste PDF stream (%PDF-1.7)..."
                 />
               </div>
@@ -576,11 +565,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
             <button
               onClick={executePipeline}
               disabled={isUploading || !rawText.trim()}
-              className={`w-full py-2.5 px-4 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${
-                isUploading
+              className={`w-full py-2.5 px-4 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-sm ${isUploading
                   ? 'bg-emerald-950 border border-emerald-700 text-emerald-400 cursor-wait'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-              }`}
+                }`}
             >
               {isUploading ? (
                 <>
@@ -695,11 +683,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
           </div>
         ) : (
           <div className="space-y-6">
-            
+
             {/* Header / Contract Parameters */}
-            <div className={`p-4 rounded-lg border ${
-              isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-            }`}>
+            <div className={`p-4 rounded-lg border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
               <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-600 block mb-1">
                 Identified Contract Parameters
               </span>
@@ -737,11 +724,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
             {/* Split: Requirements Checklist (Left) & Allocation Evaluation Split (Right) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
+
               {/* Left: Requirements Checklist */}
-              <div className={`border rounded-lg p-5 space-y-4 ${
-                isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50/70 border-slate-200'
-              }`}>
+              <div className={`border rounded-lg p-5 space-y-4 ${isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50/70 border-slate-200'
+                }`}>
                 <div className="flex items-center justify-between">
                   <h4 className={`font-semibold text-sm flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     <Layers className="w-4 h-4 text-emerald-600" />
@@ -752,9 +738,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
                 <div className="space-y-2.5">
                   {/* CSD */}
-                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${
-                    isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-                  }`}>
+                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                    }`}>
                     <div>
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>CSD Registration</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Central Supplier Database (MAAA Number)</div>
@@ -765,9 +750,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </div>
 
                   {/* SARS */}
-                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${
-                    isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-                  }`}>
+                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                    }`}>
                     <div>
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>SARS TCS PIN</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tax Compliance Status System PIN</div>
@@ -778,9 +762,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </div>
 
                   {/* B-BBEE */}
-                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${
-                    isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-                  }`}>
+                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                    }`}>
                     <div>
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>B-BBEE Certificate / Affidavit</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Level 1-8 verification or EME affidavit</div>
@@ -791,35 +774,31 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </div>
 
                   {/* CIDB */}
-                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${
-                    isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-                  }`}>
+                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                    }`}>
                     <div>
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>CIDB Grading</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Construction Industry Development Board</div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
-                      extractedData.cidbGradingRequired || extractedData.checklist?.cidb
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${extractedData.cidbGradingRequired || extractedData.checklist?.cidb
                         ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                         : 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800'
-                    }`}>
+                      }`}>
                       {extractedData.cidbGradingRequired || extractedData.checklist?.cidb || 'Not Required'}
                     </span>
                   </div>
 
                   {/* COIDA */}
-                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${
-                    isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-                  }`}>
+                  <div className={`flex items-center justify-between p-2.5 rounded border text-xs ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                    }`}>
                     <div>
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>COIDA Letter of Good Standing</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Compensation Commissioner certification</div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
-                      extractedData.extractedComplianceChecklist?.coidaRequired || extractedData.checklist?.coida
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${extractedData.extractedComplianceChecklist?.coidaRequired || extractedData.checklist?.coida
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800'
                         : 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800'
-                    }`}>
+                      }`}>
                       {extractedData.extractedComplianceChecklist?.coidaRequired || extractedData.checklist?.coida ? 'Mandatory' : 'Optional'}
                     </span>
                   </div>
@@ -828,11 +807,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
               {/* Right: Allocation Evaluation Point Splits & SME Compliance Status */}
               <div className="space-y-4">
-                
+
                 {/* Evaluation Frame Split Card */}
-                <div className={`border rounded-lg p-5 ${
-                  isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50/70 border-slate-200'
-                }`}>
+                <div className={`border rounded-lg p-5 ${isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50/70 border-slate-200'
+                  }`}>
                   <div className="flex items-center justify-between mb-3">
                     <h4 className={`font-semibold text-sm ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Evaluation Frame Split</h4>
                     <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded dark:text-amber-400 dark:bg-amber-950 dark:border-amber-800">
@@ -858,9 +836,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 </div>
 
                 {/* SME Readiness / Profile Match Card */}
-                <div className={`border rounded-lg p-5 ${
-                  isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50/70 border-slate-200'
-                }`}>
+                <div className={`border rounded-lg p-5 ${isDarkMode ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50/70 border-slate-200'
+                  }`}>
                   <div className="flex items-center justify-between mb-2">
                     <h4 className={`font-semibold text-xs uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       Bidder Profile Readiness Check
@@ -890,9 +867,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                     </div>
                   </div>
 
-                  <div className={`p-2 rounded border text-[11px] flex items-center justify-between ${
-                    isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-600'
-                  }`}>
+                  <div className={`p-2 rounded border text-[11px] flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-600'
+                    }`}>
                     <span>Overall Bid Eligibility:</span>
                     <span className="font-semibold text-emerald-600">
                       {isCsdOk && isSarsOk && isCidbOk ? '100% Fully Responsive' : 'Action Required'}
@@ -905,9 +881,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
             </div>
 
             {/* Bottom Actions Row */}
-            <div className={`pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 ${
-              isDarkMode ? 'border-slate-800' : 'border-slate-200'
-            }`}>
+            <div className={`pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'
+              }`}>
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <span>Payload stored securely under POPIA compliant identifier in MongoDB.</span>
@@ -919,11 +894,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                     extractedData.evaluationCriteria?.preferencePointsSystem === '90/10' ? '90/10' : '80/20',
                     extractedData.title
                   )}
-                  className={`px-4 py-2 text-xs font-medium rounded-lg border transition-colors flex-1 sm:flex-none text-center ${
-                    isDarkMode 
-                      ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' 
+                  className={`px-4 py-2 text-xs font-medium rounded-lg border transition-colors flex-1 sm:flex-none text-center ${isDarkMode
+                      ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
                       : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-                  }`}
+                    }`}
                 >
                   Test Price Math (80/20)
                 </button>

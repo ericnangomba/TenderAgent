@@ -1,6 +1,8 @@
 import React from 'react';
-import { Menu, ShieldCheck, Sun, Moon, FileCode, CheckCircle2 } from 'lucide-react';
+import { Menu, ShieldCheck, Sun, Moon, FileCode, Shield } from 'lucide-react';
 import { TabKey } from './Sidebar';
+import tenderAgentLogo from '../assets/tenderagentlogo.png';
+import { detectLocalModels } from '../lib/services/localModelDetector';
 
 interface HeaderProps {
   activeTab: TabKey;
@@ -28,13 +30,33 @@ export const Header: React.FC<HeaderProps> = ({
   const scanLocalModels = async () => {
     setIsDetecting(true);
     try {
-      const res = await fetch('/api/models/detect');
-      const data = await res.json();
-      if (data.success && data.report) {
-        setDetectorReport(data.report);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 600);
+      const res = await fetch('/api/models/detect', { signal: controller.signal }).catch(() => null);
+      clearTimeout(timeoutId);
+
+      if (res && res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.success && data.report) {
+          setDetectorReport(data.report);
+          setIsDetecting(false);
+          return;
+        }
       }
+
+      // Fast client-side detection fallback
+      const localReport = await detectLocalModels();
+      setDetectorReport(localReport);
     } catch (e) {
-      console.warn('Local model scan failed:', e);
+      console.warn('Local model scan fallback:', e);
+      setDetectorReport({
+        isLocalServerRunning: false,
+        detectedModels: [],
+        hasGemma: false,
+        hasLlama31: false,
+        cloudFailoverActive: true,
+        message: 'Cloud LLM Failover active (Gemini 2.5 Flash / Statutory Engine).'
+      });
     } finally {
       setIsDetecting(false);
     }
@@ -59,78 +81,83 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className={`h-16 px-4 sm:px-6 lg:px-8 border-b flex items-center justify-between sticky top-0 z-30 transition-colors backdrop-blur ${
-      isDarkMode 
-        ? 'bg-slate-950/80 border-slate-800/80 text-slate-100' 
+    <header className={`h-14 sm:h-16 px-3 sm:px-6 lg:px-8 border-b flex items-center justify-between sticky top-0 z-30 transition-colors backdrop-blur ${isDarkMode
+        ? 'bg-slate-950/80 border-slate-800/80 text-slate-100'
         : 'bg-white/80 border-slate-200/80 text-slate-800'
-    }`}>
-      {/* Left: Mobile Menu Trigger + Breadcrumb */}
-      <div className="flex items-center gap-3">
+      }`}>
+      {/* Left: Mobile Menu Trigger + Logo + Breadcrumb */}
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           onClick={onOpenMobileSidebar}
           aria-label="Open navigation sidebar"
-          className={`p-2 rounded-lg border lg:hidden transition-colors ${
-            isDarkMode 
-              ? 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white' 
+          className={`p-1.5 sm:p-2 rounded-lg border lg:hidden shrink-0 transition-colors ${isDarkMode
+              ? 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'
               : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900'
-          }`}
+            }`}
         >
           <Menu className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center gap-2">
-          <div className="lg:hidden p-0.5 rounded bg-white/95 dark:bg-white shadow-2xs">
-            <img 
-              src="/tenderagentlogo.png" 
-              alt="TenderAgent Logo" 
-              className="h-6 w-auto object-contain max-w-[110px]" 
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <div className="lg:hidden p-1 rounded-lg bg-white dark:bg-white shadow-xs shrink-0 flex items-center justify-center">
+            <img
+              src={tenderAgentLogo}
+              alt="TenderAgent Logo"
+              className="h-6 w-auto object-contain max-w-[100px]"
+              onError={(e) => {
+                if (e.currentTarget.src !== '/tenderagentlogo.png') {
+                  e.currentTarget.src = '/tenderagentlogo.png';
+                }
+              }}
             />
           </div>
-          <div className="hidden sm:flex items-center gap-2">
-            <span className={`text-xs font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+            <span className={`text-xs font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               TenderAgent
             </span>
             <span className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>/</span>
           </div>
-          <h1 className={`text-sm font-semibold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          <h1 className={`text-xs sm:text-sm font-semibold tracking-tight truncate max-w-[125px] xs:max-w-[170px] sm:max-w-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             {getTabLabel(activeTab)}
           </h1>
         </div>
       </div>
 
       {/* Right: Clean, unclouded status & action controls */}
-      <div className="flex items-center gap-2.5">
-        
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+
         {/* Local Model & Automatic Failover Indicator Pill */}
         <div className="relative">
           <button
             onClick={() => setIsModelModalOpen(!isModelModalOpen)}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border transition-all ${
-              detectorReport?.hasGemma || detectorReport?.hasLlama31
+            className={`flex items-center gap-1 sm:gap-1.5 text-xs px-2 py-1 sm:px-2.5 sm:py-1 rounded-md border transition-all ${detectorReport?.hasGemma || detectorReport?.hasLlama31
                 ? 'bg-emerald-50 border-emerald-300 text-emerald-800 dark:bg-emerald-950/60 dark:border-emerald-700 dark:text-emerald-300'
                 : 'bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/60 dark:border-amber-700 dark:text-amber-300'
-            }`}
+              }`}
             title="Click to view Local Model Detector & Auto-Failover Policy"
           >
-            <span className={`w-2 h-2 rounded-full ${
-              detectorReport?.hasGemma || detectorReport?.hasLlama31 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-            }`} />
-            <span className="font-semibold text-[11px]">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${detectorReport?.hasGemma || detectorReport?.hasLlama31 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+              }`} />
+            <span className="hidden sm:inline font-semibold text-[11px] whitespace-nowrap">
               {detectorReport?.hasGemma ? 'Local: Gemma 2 Online' : detectorReport?.hasLlama31 ? 'Local: Llama 3.1 8B' : 'Cloud Failover Active'}
             </span>
-            <span className="text-[9px] px-1 py-0.2 rounded bg-black/10 dark:bg-white/10 font-mono">
-              🛡️ Failover
+            <span className="sm:hidden font-bold text-[10px] whitespace-nowrap">
+              {detectorReport?.hasGemma ? 'Gemma 2' : detectorReport?.hasLlama31 ? 'Llama 3' : 'Cloud'}
+            </span>
+            <span className="text-[9px] px-1 py-0.5 rounded bg-black/10 dark:bg-white/10 font-mono hidden xs:inline-flex items-center gap-0.5">
+              <Shield className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+              <span>Failover</span>
             </span>
           </button>
 
           {/* Model Status Popover Dropdown */}
           {isModelModalOpen && (
-            <div className={`absolute right-0 mt-2 w-80 rounded-xl shadow-xl border p-4 z-50 text-xs ${
-              isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
-            }`}>
+            <div className={`absolute right-0 mt-2 w-80 rounded-xl shadow-xl border p-4 z-50 text-xs ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+              }`}>
               <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-200 dark:border-slate-800">
                 <div className="font-bold text-sm flex items-center gap-1.5">
-                  <span>🤖</span> Local Model Orchestrator
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>Local Model Orchestrator</span>
                 </div>
                 <button
                   onClick={scanLocalModels}
@@ -152,8 +179,8 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Detected Models:</span>
                   <span className="font-bold text-emerald-600">
-                    {detectorReport?.detectedModels?.length > 0 
-                      ? detectorReport.detectedModels.map((m: any) => m.name).join(', ') 
+                    {detectorReport?.detectedModels?.length > 0
+                      ? detectorReport.detectedModels.map((m: any) => m.name).join(', ')
                       : 'None'}
                   </span>
                 </div>
@@ -183,10 +210,9 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Subtle POPIA Indicator */}
-        <div className={`hidden md:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${
-          isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
-        }`}>
+        {/* Subtle POPIA Indicator (Desktop) */}
+        <div className={`hidden md:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
+          }`}>
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
           <span>POPIA Sandboxed</span>
         </div>
@@ -206,20 +232,18 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={onToggleTheme}
           aria-label={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}
-          className={`p-2 rounded-lg border transition-colors ${
-            isDarkMode 
-              ? 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white' 
+          className={`p-1.5 sm:p-2 rounded-lg border transition-colors shrink-0 ${isDarkMode
+              ? 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'
               : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900'
-          }`}
+            }`}
           title={isDarkMode ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
         >
           {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
         </button>
 
         {/* User SME Badge */}
-        <div className={`hidden sm:flex items-center gap-2 pl-2 border-l ${
-          isDarkMode ? 'border-slate-800' : 'border-slate-200'
-        }`}>
+        <div className={`hidden sm:flex items-center gap-2 pl-2 border-l ${isDarkMode ? 'border-slate-800' : 'border-slate-200'
+          }`}>
           <div className="text-right">
             <div className={`text-xs font-semibold truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
               {companyName}

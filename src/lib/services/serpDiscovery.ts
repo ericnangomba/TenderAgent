@@ -9,10 +9,10 @@ function getCuratedLeads(): IDiscoveredLead[] {
   return SAMPLE_TENDERS.map((t, idx) => {
     const closing = typeof t.closingDate === 'string' ? t.closingDate : t.closingDate.toISOString();
     const cleanDate = closing.split('T')[0];
-    
+
     // Calculate days remaining
     const diffDays = Math.max(0, Math.ceil((new Date(closing).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-    
+
     return {
       id: `lead-etender-${idx + 1}`,
       title: t.title,
@@ -116,16 +116,16 @@ export async function fetchSouthAfricanTenders(query?: string, province?: string
   let filtered = leads;
   if (province && province !== 'All Provinces') {
     const provLower = province.toLowerCase();
-    filtered = filtered.filter(l => 
-      l.province.toLowerCase().includes(provLower) || 
+    filtered = filtered.filter(l =>
+      l.province.toLowerCase().includes(provLower) ||
       (province !== 'Western Cape' && l.province.toLowerCase().includes('national'))
     );
   }
 
   if (query && query.trim()) {
     const qLower = query.toLowerCase();
-    filtered = filtered.filter(l => 
-      l.title.toLowerCase().includes(qLower) || 
+    filtered = filtered.filter(l =>
+      l.title.toLowerCase().includes(qLower) ||
       l.department.toLowerCase().includes(qLower) ||
       l.category.toLowerCase().includes(qLower) ||
       l.referenceNumber.toLowerCase().includes(qLower) ||
