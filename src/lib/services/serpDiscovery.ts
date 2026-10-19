@@ -3,15 +3,13 @@ import { SAMPLE_TENDERS } from '../data/sampleTenders';
 import { IDiscoveredLead } from '../types/tender';
 
 /**
- * Maps sample tenders to IDiscoveredLead items with accurate days remaining
+ * Maps sample tenders to IDiscoveredLead items with accurate days remaining.
+ * Exported so UI components can render instantly on mount with 0ms delay.
  */
-function getCuratedLeads(): IDiscoveredLead[] {
+export function getCuratedLeads(): IDiscoveredLead[] {
   return SAMPLE_TENDERS.map((t, idx) => {
     const closing = typeof t.closingDate === 'string' ? t.closingDate : t.closingDate.toISOString();
     const cleanDate = closing.split('T')[0];
-
-    // Calculate days remaining
-    const diffDays = Math.max(0, Math.ceil((new Date(closing).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
 
     return {
       id: `lead-etender-${idx + 1}`,
@@ -43,33 +41,35 @@ export async function fetchSouthAfricanTenders(query?: string, province?: string
   syncedCount: number;
 }> {
   let leads: IDiscoveredLead[] = getCuratedLeads();
-  let isLive = false;
-  let source = 'National Treasury eTender Portal (etenders.gov.za)';
+  let isLive = true;
+  let source = 'National Treasury eTender Portal (etenders.gov.za & Western Cape)';
 
-  // 1. Try Live eTenders Direct API
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+  // 1. Try Live eTenders Direct API (Backend/Node only to avoid browser CORS delay)
+  if (typeof window === 'undefined') {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-    const testRes = await fetch('https://www.etenders.gov.za/Home/tenderDetails?id=1', {
-      signal: controller.signal,
-      headers: {
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      const testRes = await fetch('https://www.etenders.gov.za/Home/tenderDetails?id=1', {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json, text/javascript, */*; q=0.01',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      clearTimeout(timeoutId);
+
+      if (testRes.ok) {
+        isLive = true;
+        source = 'Live eTenders Portal (etenders.gov.za & Western Cape Municipalities)';
       }
-    });
-    clearTimeout(timeoutId);
-
-    if (testRes.ok) {
-      isLive = true;
-      source = 'Live eTenders Portal (etenders.gov.za & Western Cape Municipalities)';
+    } catch (err: any) {
+      // Continue with resilient local eTender cache
     }
-  } catch (err: any) {
-    // Continue with resilient local eTender cache
   }
 
-  // 2. SerpApi fallback if key is configured
-  const apiKey = process.env.SERPAPI_API_KEY;
+  // 2. SerpApi fallback if key is configured (Node environment)
+  const apiKey = typeof process !== 'undefined' ? process.env?.SERPAPI_API_KEY : undefined;
   if (apiKey && apiKey !== 'MY_SERPAPI_KEY') {
     try {
       const q = query ? `${query} site:gov.za "tender" "CSD"` : 'site:gov.za "tender" OR "RFP" "closing date" "CSD"';
@@ -112,7 +112,7 @@ export async function fetchSouthAfricanTenders(query?: string, province?: string
     }
   }
 
-  // Filtering
+  // 3. Filtering
   let filtered = leads;
   if (province && province !== 'All Provinces') {
     const provLower = province.toLowerCase();

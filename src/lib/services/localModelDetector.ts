@@ -37,9 +37,9 @@ const COMMON_LOCAL_ENDPOINTS = [
 ];
 
 /**
- * Checks a specific endpoint with an abort timeout
+ * Checks a specific endpoint with a fast abort timeout
  */
-async function probeEndpoint(url: string, timeoutMs: number = 800): Promise<{ reachable: boolean; data?: any; error?: string }> {
+async function probeEndpoint(url: string, timeoutMs: number = 400): Promise<{ reachable: boolean; data?: any; error?: string }> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -62,7 +62,7 @@ async function probeEndpoint(url: string, timeoutMs: number = 800): Promise<{ re
 }
 
 /**
- * Probes local environment for Gemma, Llama 3.1, and local model servers
+ * Probes local environment in parallel for Gemma, Llama 3.1, and local model servers
  */
 export async function detectLocalModels(customEndpoint?: string): Promise<ILocalDetectionReport> {
   const testedEndpoints: { url: string; reachable: boolean; error?: string }[] = [];
@@ -71,17 +71,41 @@ export async function detectLocalModels(customEndpoint?: string): Promise<ILocal
   let activeRunner: 'ollama' | 'lmstudio' | 'vllm' | 'custom' | undefined;
   let activeEndpoint: string | undefined;
 
+  // On HTTPS browser deployments, mixed-content security blocks plain http://localhost
+  const isHttpsBrowser = typeof window !== 'undefined' && window.location.protocol === 'https:';
+
+  if (isHttpsBrowser && !customEndpoint) {
+    return {
+      isLocalServerRunning: false,
+      detectedModels: [],
+      hasGemma: false,
+      hasLlama31: false,
+      cloudFailoverActive: true,
+      message: 'Cloud LLM Failover active (Google Gemini 2.5 Flash / Statutory Engine). Air-gapped local model execution is supported on local development instances (http://localhost:3000).',
+      testedEndpoints: [{ url: 'http://localhost:11434', reachable: false, error: 'HTTPS browser mixed-content boundary (Cloud failover active)' }]
+    };
+  }
+
   const endpointsToTest = customEndpoint
     ? [{ url: customEndpoint, runner: 'custom' as const, type: 'openai' }, ...COMMON_LOCAL_ENDPOINTS]
     : COMMON_LOCAL_ENDPOINTS;
 
-  for (const ep of endpointsToTest) {
-    // 1. If Ollama runner check
-    if (ep.runner === 'ollama') {
-      const probe = await probeEndpoint(`${ep.url}/api/tags`);
-      testedEndpoints.push({ url: `${ep.url}/api/tags`, reachable: probe.reachable, error: probe.error });
+  // Probe all endpoints in parallel for sub-500ms total response time
+  const probeResults = await Promise.allSettled(
+    endpointsToTest.map(async (ep) => {
+      const probeUrl = ep.runner === 'ollama' ? `${ep.url}/api/tags` : `${ep.url}/v1/models`;
+      const probe = await probeEndpoint(probeUrl, 400);
+      return { ep, probeUrl, probe };
+    })
+  );
 
-      if (probe.reachable && probe.data?.models && Array.isArray(probe.data.models)) {
+  for (const result of probeResults) {
+    if (result.status !== 'fulfilled') continue;
+    const { ep, probeUrl, probe } = result.value;
+    testedEndpoints.push({ url: probeUrl, reachable: probe.reachable, error: probe.error });
+
+    if (probe.reachable && !isLocalServerRunning) {
+      if (ep.runner === 'ollama' && probe.data?.models && Array.isArray(probe.data.models)) {
         isLocalServerRunning = true;
         activeRunner = 'ollama';
         activeEndpoint = ep.url;
@@ -104,15 +128,7 @@ export async function detectLocalModels(customEndpoint?: string): Promise<ILocal
             format: m.details?.format || 'gguf'
           });
         }
-        break; // Found active Ollama server
-      }
-    }
-    // 2. OpenAI-compatible local servers (LM Studio, vLLM, custom)
-    else {
-      const probe = await probeEndpoint(`${ep.url}/v1/models`);
-      testedEndpoints.push({ url: `${ep.url}/v1/models`, reachable: probe.reachable, error: probe.error });
-
-      if (probe.reachable && probe.data?.data && Array.isArray(probe.data.data)) {
+      } else if (probe.data?.data && Array.isArray(probe.data.data)) {
         isLocalServerRunning = true;
         activeRunner = ep.runner;
         activeEndpoint = `${ep.url}/v1`;
@@ -132,7 +148,6 @@ export async function detectLocalModels(customEndpoint?: string): Promise<ILocal
             isLlama31
           });
         }
-        break;
       }
     }
   }
@@ -151,11 +166,11 @@ export async function detectLocalModels(customEndpoint?: string): Promise<ILocal
 
   let message = '';
   if (isLocalServerRunning && (hasLlama31 || hasGemma)) {
-    message = `Local ${activeRunner?.toUpperCase()} runner active! Detected ${detectedModels.length} models including ${hasLlama31 ? 'Llama 3.1 8B' : ''} ${hasGemma ? 'Gemma 2' : ''}. Tasks will run locally with automatic cloud failover.`;
+    message = `Local ${activeRunner?.toUpperCase()} runner active! Detected ${detectedModels.length} models including ${hasLlama31 ? 'Llama 3.1 8B' : ''} ${hasGemma ? 'Gemma 2' : ''}. Tasks run locally with automatic cloud failover.`;
   } else if (isLocalServerRunning) {
-    message = `Local ${activeRunner?.toUpperCase()} server active at ${activeEndpoint}, but Gemma or Llama 3.1 8B not yet pulled. Run 'ollama pull llama3.1:8b' or 'ollama pull gemma2:9b'. Cloud failover ready.`;
+    message = `Local ${activeRunner?.toUpperCase()} server active at ${activeEndpoint}, but Gemma or Llama 3.1 8B not yet pulled. Cloud failover ready.`;
   } else {
-    message = `No local LLM server active on localhost (ports 11434, 1234, 8000). Automatic Cloud LLM failover active (Gemini 2.5 Flash / Statutory Engine) for all tasks.`;
+    message = `No local LLM server active on localhost. Automatic Cloud LLM failover active (Gemini 2.5 Flash / Statutory Engine) for all tasks.`;
   }
 
   return {

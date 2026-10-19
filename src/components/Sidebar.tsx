@@ -4,6 +4,7 @@ import {
   BookOpen, ShieldCheck, Moon, Sun, ChevronRight, X, Cpu, CheckCircle2
 } from 'lucide-react';
 import { IUserProfile } from '../lib/types/tender';
+import tenderAgentLogo from '../assets/tenderagentlogo.png';
 
 export type TabKey = 'analyzer' | 'discovery' | 'finetuning' | 'calculator' | 'vault' | 'sbd' | 'tracing' | 'settings';
 
@@ -43,6 +44,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userProfile,
   isProcessing
 }) => {
+  const [logoError, setLogoError] = React.useState(false);
+
   const navSections: NavSection[] = [
     {
       title: 'RFP WORKFLOW',
@@ -131,21 +134,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}>
 
         {/* Top Brand Header */}
-        <div className={`relative min-h-[136px] p-4 flex items-center justify-center border-b ${isDarkMode ? 'border-slate-800/80 bg-slate-950' : 'border-slate-200/80 bg-white'
+        <div className={`relative min-h-[92px] px-4 py-3 flex items-center justify-between border-b ${isDarkMode ? 'border-slate-800/80 bg-slate-950' : 'border-slate-200/80 bg-white'
           }`}>
-          <div className="flex items-center justify-center w-full">
-            <div className={`p-2.5 rounded-2xl ${isDarkMode ? 'bg-white/95 shadow-md' : 'bg-transparent'} flex items-center justify-center w-full`}>
-              <img
-                src="/tenderagentlogo.png"
-                alt="TenderAgent Logo"
-                className="h-28 sm:h-32 w-auto object-contain max-w-[270px] transition-transform hover:scale-105 duration-200"
-              />
-            </div>
+          <div className="flex items-center justify-start w-full pr-8">
+            {!logoError ? (
+              <div className={`p-1.5 rounded-xl ${isDarkMode ? 'bg-white/95 shadow-sm' : 'bg-transparent'} flex items-center justify-center max-w-[230px]`}>
+                <img
+                  src={tenderAgentLogo}
+                  alt="TenderAgent Logo"
+                  className="h-14 sm:h-16 w-auto object-contain transition-transform hover:scale-105 duration-200"
+                  onError={() => setLogoError(true)}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-2.5 py-1">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-800 flex items-center justify-center text-white font-bold text-lg shadow-md">
+                  🇿🇦
+                </div>
+                <div>
+                  <div className="font-extrabold text-base tracking-tight flex items-center gap-1">
+                    <span className="text-emerald-600">Tender</span>
+                    <span className={isDarkMode ? 'text-white' : 'text-slate-900'}>Agent</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-medium">SA Procurement AI</div>
+                </div>
+              </div>
+            )}
           </div>
 
           <button
             onClick={onCloseMobile}
-            className={`p-1.5 rounded-md lg:hidden absolute top-3 right-3 ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+            aria-label="Close navigation sidebar"
+            className={`p-1.5 rounded-lg lg:hidden absolute top-3.5 right-3 ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
               }`}
           >
             <X className="w-5 h-5" />
