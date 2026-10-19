@@ -74,3 +74,27 @@
   background-color: #065f46;
   color: #ecfdf5;
 }
+
+/* Suppress Netlify Injected Badges, Drawers, and Promotional Overlays */
+iframe[src*="netlify"],
+div[id*="netlify"],
+div[class*="netlify"],
+[data-netlify-drawer],
+[data-netlify-badge],
+.netlify-badge,
+#netlify-badge,
+netlify-badge,
+a[href*="netlify.com/drop"],
+a[href*="utm_source=netlify_badge"],
+div:has(> a[href*="utm_source=netlify_badge"]),
+div:has(> a[href*="netlify.com/drop"]) {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  width: 0 !important;
+  overflow: hidden !important;
+  position: absolute !important;
+  z-index: -9999 !important;
+}

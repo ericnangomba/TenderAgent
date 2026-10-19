@@ -16,10 +16,68 @@
     <meta property="og:description" content="Micro-SaaS helping South African SMEs instantly analyze government and corporate RFPs for CSD, SARS, B-BBEE, and CIDB compliance and build structured bid response skeletons." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Instant Removal & Suppression for Netlify Injected Badges and Drawers -->
+    <style>
+      iframe[src*="netlify"],
+      div[id*="netlify"],
+      div[class*="netlify"],
+      [data-netlify-drawer],
+      [data-netlify-badge],
+      .netlify-badge,
+      #netlify-badge,
+      netlify-badge,
+      a[href*="netlify.com/drop"],
+      a[href*="utm_source=netlify_badge"],
+      div:has(> a[href*="utm_source=netlify_badge"]),
+      div:has(> a[href*="netlify.com/drop"]) {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        height: 0 !important;
+        width: 0 !important;
+        position: absolute !important;
+        z-index: -9999 !important;
+      }
+    </style>
+    <script>
+      (function() {
+        function purgeNetlifyBadge() {
+          try {
+            var selectors = [
+              'iframe[src*="netlify"]',
+              '[data-netlify-drawer]',
+              '[data-netlify-badge]',
+              '.netlify-badge',
+              '#netlify-badge',
+              'netlify-badge',
+              'a[href*="utm_source=netlify_badge"]',
+              'a[href*="netlify.com/drop"]'
+            ];
+            var targets = document.querySelectorAll(selectors.join(','));
+            targets.forEach(function(el) {
+              var parent = el.closest('div[style*="position: fixed"], div[style*="z-index"]') || el;
+              if (parent && parent.parentNode) {
+                parent.parentNode.removeChild(parent);
+              }
+            });
+          } catch (e) {}
+        }
+        purgeNetlifyBadge();
+        if (window.MutationObserver) {
+          var observer = new MutationObserver(function() {
+            purgeNetlifyBadge();
+          });
+          observer.observe(document.documentElement, { childList: true, subtree: true });
+        }
+        window.addEventListener('DOMContentLoaded', purgeNetlifyBadge);
+        window.addEventListener('load', purgeNetlifyBadge);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
