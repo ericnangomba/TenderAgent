@@ -5,6 +5,16 @@
 [build.processing]
   skip_processing = true
 
+# API reverse proxy: the browser only ever talks to this site first-party.
+# /api/* is forwarded to the private backend over its Tailscale Funnel HTTPS
+# address, so session cookies stay SameSite=Lax first-party and no CORS or
+# SameSite=None handling is needed.
+[[redirects]]
+  from = "/api/*"
+  to = "https://apphosting.tail1cb332.ts.net/api/:splat"
+  status = 200
+  force = true
+
 # Single Page Application (SPA) routing fallback
 [[redirects]]
   from = "/*"
