@@ -1,12 +1,12 @@
 import React from 'react';
 import {
   FileSearch, Sparkles, Scale, Building2, Terminal, Settings as SettingsIcon,
-  BookOpen, ShieldCheck, Moon, Sun, ChevronRight, X, Cpu, CheckCircle2
+  BookOpen, ShieldCheck, ChevronRight, X, Cpu, CheckCircle2, UserCircle, ClipboardCheck, LayoutDashboard
 } from 'lucide-react';
 import { IUserProfile } from '../lib/types/tender';
 import tenderAgentLogo from '../assets/tenderagentlogo.png';
 
-export type TabKey = 'analyzer' | 'discovery' | 'finetuning' | 'calculator' | 'vault' | 'sbd' | 'tracing' | 'settings';
+export type TabKey = 'analyzer' | 'discovery' | 'finetuning' | 'calculator' | 'readiness' | 'vault' | 'sbd' | 'tracing' | 'settings' | 'account' | 'admin';
 
 interface SidebarProps {
   activeTab: TabKey;
@@ -14,9 +14,11 @@ interface SidebarProps {
   isOpen: boolean;
   onCloseMobile: () => void;
   isDarkMode: boolean;
-  onToggleTheme: () => void;
+  /** Server-derived operator flag: shows the administration section. */
+  isAdmin?: boolean;
   userProfile: IUserProfile;
   isProcessing?: boolean;
+  isSampleProfile?: boolean;
 }
 
 interface NavItem {
@@ -40,8 +42,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   onCloseMobile,
   isDarkMode,
-  onToggleTheme,
+  isAdmin = false,
   userProfile,
+  isSampleProfile,
   isProcessing
 }) => {
   const [logoError, setLogoError] = React.useState(false);
@@ -65,11 +68,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           count: '10 WC'
         },
         {
-          key: 'finetuning' as TabKey,
-          label: 'LLM Fine-Tuning',
-          description: 'Llama 3.1 & Gemma 2 Studio',
-          icon: Cpu,
-          badge: 'LoRA'
+          key: 'readiness' as TabKey,
+          label: 'Bid Readiness',
+          description: 'Sourced requirement checklist',
+          icon: ClipboardCheck
         },
         {
           key: 'calculator' as TabKey,
@@ -87,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'SME Profile Vault',
           description: 'CSD, SARS, B-BBEE, CIDB',
           icon: Building2,
-          status: userProfile.csdNumber ? 'MAAA' : 'Incomplete'
+          status: userProfile.csdNumber ? 'On file' : 'Not set up'
         },
         {
           key: 'sbd' as TabKey,
@@ -95,26 +97,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
           description: 'SBD 1, 4, 6.1 templates',
           icon: BookOpen
         },
-        {
-          key: 'tracing' as TabKey,
-          label: 'Sentry Agent Traces',
-          description: 'Live transaction spans',
-          icon: Terminal
-        }
       ]
     },
     {
-      title: 'PREFERENCES',
+      title: 'ACCOUNT',
       items: [
         {
-          key: 'settings' as TabKey,
-          label: 'Platform Settings',
-          description: 'AI engine, POPIA, VAT rate',
-          icon: SettingsIcon
+          key: 'account' as TabKey,
+          label: 'Account',
+          description: 'Profile & subscription',
+          icon: UserCircle
         }
       ]
     }
   ];
+
+  // Operator-only surface. Server enforces requireAdmin on the underlying
+  // endpoints; this section is presentation, not the security boundary.
+  const adminSection: NavSection = {
+    title: 'ADMINISTRATION',
+    items: [
+      {
+        key: 'admin' as TabKey,
+        label: 'Platform Overview',
+        description: 'Usage & system status',
+        icon: LayoutDashboard
+      },
+      {
+        key: 'finetuning' as TabKey,
+        label: 'LLM Fine-Tuning',
+        description: 'Llama 3.1 & Gemma 2 Studio',
+        icon: Cpu,
+        badge: 'LoRA'
+      },
+      {
+        key: 'tracing' as TabKey,
+        label: 'Sentry Agent Traces',
+        description: 'Live transaction spans',
+        icon: Terminal
+      },
+      {
+        key: 'settings' as TabKey,
+        label: 'Platform Settings',
+        description: 'AI engine, POPIA, VAT rate',
+        icon: SettingsIcon
+      }
+    ]
+  };
+
+  const visibleSections = isAdmin ? [...navSections, adminSection] : navSections;
 
   return (
     <>
@@ -174,7 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Navigation Sections */}
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-          {navSections.map((sec, sIdx) => (
+          {visibleSections.map((sec, sIdx) => (
             <div key={sIdx} className="space-y-1">
               <div className={`px-3 text-[10px] font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-500' : 'text-slate-400'
                 } mb-2`}>
@@ -240,49 +271,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ))}
         </div>
 
-        {/* Bottom Section: Profile + Theme Toggle */}
+        {/* Bottom Section: Profile */}
         <div className={`p-4 border-t ${isDarkMode ? 'border-slate-800/80 bg-slate-950/60' : 'border-slate-200/80 bg-slate-50/70'
           } space-y-3`}>
 
           {/* Active Profile Info */}
-          <div className={`p-2.5 rounded-lg border text-xs ${isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
-            }`}>
-            <div className="flex items-center justify-between mb-1">
-              <span className={`font-semibold truncate max-w-[140px] ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
-                {userProfile.companyName}
-              </span>
-              <span className="text-[9px] font-mono text-emerald-600 font-bold">
-                Lvl {userProfile.bbbeeLevel}
-              </span>
-            </div>
-            <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} flex items-center justify-between`}>
-              <span>CSD: {userProfile.csdNumber || 'Unset'}</span>
-              <span className="text-emerald-600 font-semibold">100% POPIA Safe</span>
-            </div>
-          </div>
+          <button
+            onClick={() => { setActiveTab('vault'); onCloseMobile(); }}
+            className={`w-full text-left p-2.5 rounded-lg border text-xs transition-colors ${isDarkMode ? 'bg-slate-900/80 border-slate-800 hover:bg-slate-900' : 'bg-white border-slate-200 hover:border-emerald-300'
+              }`}
+          >
+            {userProfile.companyName ? (
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`font-semibold truncate max-w-[160px] ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                    {userProfile.companyName}
+                  </span>
+                  {userProfile.bbbeeLevel ? (
+                    <span className="text-[9px] font-mono text-emerald-600 font-bold">
+                      Lvl {userProfile.bbbeeLevel}
+                    </span>
+                  ) : null}
+                </div>
+                <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  CSD: {userProfile.csdNumber || 'not captured yet'}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className={`font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Set up your company profile
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-emerald-600" />
+              </div>
+            )}
+          </button>
 
-          {/* Theme Switcher Button */}
-          <div className="flex items-center justify-between pt-1">
-            <button
-              onClick={onToggleTheme}
-              className={`w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-medium border transition-colors ${isDarkMode
-                  ? 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
-                  : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700 shadow-2xs'
-                }`}
-            >
-              {isDarkMode ? (
-                <>
-                  <Sun className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Light Theme</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Dark Theme</span>
-                </>
-              )}
-            </button>
-          </div>
 
         </div>
 

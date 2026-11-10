@@ -1,4 +1,7 @@
 export interface IComplianceChecklist {
+  /** Semantics: true means THIS tender's text lists the item as a requirement.
+   *  false means "not found in this tender's text" - it never asserts the item
+   *  is unnecessary; the tender's own returnables list governs. */
   csdRequired: boolean;
   sarsPinRequired: boolean;
   bbbeeRequired: boolean;
@@ -24,7 +27,7 @@ export interface ITender {
   closingDate: string | Date;
   estimatedBudget?: string;
   province?: string;
-  category?: 'ICT & Technology' | 'Civil & Construction' | 'Security & Facilities' | 'Logistics & Fleet' | 'Professional Services' | 'Medical & Healthcare';
+  category?: 'ICT & Technology' | 'Civil & Construction' | 'Security & Facilities' | 'Logistics & Fleet' | 'Professional Services' | 'Medical & Healthcare' | 'General Services';
   cidbGradingRequired?: string;
   extractedComplianceChecklist: IComplianceChecklist;
   evaluationCriteria: IEvaluationCriteria;
@@ -146,6 +149,8 @@ export interface IPlatformModel {
   contextWindow: string;
   defaultEndpoint?: string;
   isAvailable: boolean;
+  /** Demo/preview entry, not a deployed model. */
+  isDemo?: boolean;
 }
 
 export interface IFineTuningExample {
@@ -168,6 +173,8 @@ export interface IFineTuningDataset {
   format: 'alpaca' | 'sharegpt' | 'chatml';
   examples: IFineTuningExample[];
   createdAt: string;
+  /** Owning tenant; absent on curated sample datasets. */
+  tenantId?: string;
 }
 
 export interface IFineTuningJob {
@@ -193,6 +200,10 @@ export interface IFineTuningJob {
   adapterArtifactName: string;
   outputModelName: string;
   createdAt: string;
+  /** Owning tenant; absent on sample jobs. */
+  tenantId?: string;
+  /** True for simulated training runs (no GPU execution, no model artifact). */
+  simulated?: boolean;
   completedAt?: string;
 }
 

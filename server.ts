@@ -1,16 +1,27 @@
 import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { executeRfpPipeline, inMemoryTenderStore, activeLlmConfig, updateActiveLlmConfig } from './src/lib/agents/mastraEngine';
+import { executeRfpPipeline, inMemoryTenderStore, activeLlmConfig, resolveServerLlmConfig, publicLlmConfigView } from './src/lib/agents/mastraEngine';
 import { fetchSouthAfricanTenders } from './src/lib/services/serpDiscovery';
 import { extractTextFromPdf, isRawPdfString, parseRawPdfString } from './src/lib/services/documentParser';
 import { detectLocalModels } from './src/lib/services/localModelDetector';
 import { SAMPLE_TENDERS } from './src/lib/data/sampleTenders';
+import { registerTenderFeedRoutes } from './src/lib/server/tenderFeed';
 import { IUserProfile, IPlatformModel, IFineTuningDataset, IFineTuningJob } from './src/lib/types/tender';
 
 dotenv.config();
+
+import { createFoundation } from './src/lib/server/foundation';
+import { loadConfig, assertSafeConfig } from './src/lib/server/config';
+import { createStoreRepos } from './src/lib/server/repos';
+const foundationConfig = loadConfig();
+// Fail closed before opening any store connection (e.g. STORE=postgres
+// without DATABASE_URL must never attempt a localhost connection).
+assertSafeConfig(foundationConfig);
+const foundation = createFoundation({ config: foundationConfig, repos: await createStoreRepos(foundationConfig) });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,25 +29,64 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 
+// Client IPs (used by the auth rate limiter) come from X-Forwarded-For only
+// when TRUST_PROXY says a known proxy is in front. Default: trust nothing.
+app.set('trust proxy', foundation.config.trustProxy);
+
+/** True only for loopback HTTP(S) endpoints - used to block SSRF probes. */
+function isLoopbackEndpoint(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+// Bounded concurrency for heavy document/AI work so a burst of uploads cannot
+// starve the process; excess requests get a clear 429 instead of queueing.
+let heavyOpsInFlight = 0;
+const HEAVY_OPS_MAX = Number(process.env.HEAVY_OPS_MAX || 4);
+function heavyOpLimiter(req: Request, res: Response, next: () => void): void {
+  if (heavyOpsInFlight >= HEAVY_OPS_MAX) {
+    res.status(429).json({ success: false, error: 'server_busy', retry: 'Please retry shortly.' });
+    return;
+  }
+  heavyOpsInFlight += 1;
+  res.on('finish', () => { heavyOpsInFlight -= 1; });
+  next();
+}
+
+// Standard security headers on every response (API and static). CSP stays
+// with the static host's config; these are the safe universal set.
+app.use((_req: Request, res: Response, next: () => void) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
+// Billing webhooks need the raw body for HMAC signature verification - mount before JSON parsing
+app.use('/api/billing/webhook', foundation.webhookRouter);
+
 // Allow large payloads for PDF ingestion and multi-page documents
 app.use(express.json({ limit: '50mb' }));
+
+// Foundation: session resolution, subscription guards (no-op unless AUTH_REQUIRED=true), auth/account routes
+app.use(foundation.originCheckMiddleware);
+app.use('/api', foundation.apiCacheHeaders);
+app.use(foundation.sessionMiddleware);
+app.use(foundation.guardMiddleware);
+app.use('/api', foundation.router);
+// Operator surface: read-only aggregate admin endpoints (requireAdmin enforced inside).
+app.use('/api/admin', foundation.adminRouter);
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Persistent memory storage for user company profile (POPIA sandboxed)
-let userSmeProfile: IUserProfile = {
-  companyName: 'Apex Strategic Solutions (Pty) Ltd',
-  registrationNumber: '2023/849201/07',
-  csdNumber: 'MAAA0821945',
-  taxComplianceStatusPin: 'TCS-9482104-Z',
-  bbbeeLevel: 1,
-  bbbeeType: 'EME',
-  cidbGrading: '7CE PE',
-  coidaGoodStandingValid: true,
-  coidaExpiryDate: '2027-04-30',
-  contactEmail: 'tenders@apexstrategic.co.za',
-  contactPhone: '+27 (0)11 482 9200',
-  province: 'Western Cape'
-};
+// No server-side sample identity: with no signed-in profile the skeleton
+// falls back to bracketed placeholders, never a fabricated company.
+let userSmeProfile: Partial<IUserProfile> = {};
 
 // Seed sample tenders (all 14 tenders including 10 live Western Cape notices) into memory cache
 SAMPLE_TENDERS.forEach(t => {
@@ -61,7 +111,7 @@ export const PLATFORM_MODELS: IPlatformModel[] = [
     name: 'Meta Llama 3.1 8B Instruct (Open LLM)',
     provider: 'ollama',
     baseArchitecture: 'Llama 3.1 8B',
-    description: 'State-of-the-art open weights 8B model via private Ollama/vLLM. 100% POPIA on-premise.',
+    description: 'Open-weights 8B model served from your own infrastructure via Ollama/vLLM.',
     isOpenWeights: true,
     isFineTuned: false,
     contextWindow: '128k tokens',
@@ -85,19 +135,20 @@ export const PLATFORM_MODELS: IPlatformModel[] = [
     name: 'Llama 3.1 8B - SA Procurement LoRA v1',
     provider: 'custom-finetuned' as any,
     baseArchitecture: 'Custom LoRA',
-    description: 'Domain fine-tuned on South African PPPFA 2022, CIDB Act, SBD schedules & Western Cape gazettes.',
+    description: 'Preview entry for the fine-tuning studio (simulated - no trained adapter artifact exists yet).',
     isOpenWeights: true,
     isFineTuned: true,
     contextWindow: '32k tokens',
     defaultEndpoint: 'http://localhost:11434/v1',
-    isAvailable: true
+    isAvailable: false,
+    isDemo: true
   },
   {
     id: 'gemma2-local',
     name: 'Gemma 2 Local Simulator (Deterministic)',
     provider: 'local-simulator',
     baseArchitecture: 'Gemma 2',
-    description: 'Zero external API tokens. Guaranteed 100% uptime with statutory regex heuristics.',
+    description: 'Deterministic rule-based fallback. Runs offline with no external API calls.',
     isOpenWeights: true,
     isFineTuned: false,
     contextWindow: '16k tokens',
@@ -181,6 +232,7 @@ const inMemoryDatasets: IFineTuningDataset[] = [
 // In-Memory Fine-Tuning Jobs Registry
 const inMemoryJobs: IFineTuningJob[] = [
   {
+    simulated: true,
     id: 'ft-job-001',
     jobName: 'llama-3.1-8b-sa-procurement-lora-v1',
     baseModel: 'meta-llama/Meta-Llama-3.1-8B-Instruct',
@@ -221,20 +273,33 @@ const inMemoryJobs: IFineTuningJob[] = [
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
-    engine: 'TenderAgent Mastra Orchestrator',
-    aiModel: activeLlmConfig.modelId,
-    activeProvider: activeLlmConfig.provider,
-    openLlmAvailable: true,
+    engine: 'TenderAgent RFP pipeline',
+    configuredModel: activeLlmConfig.modelId,
+    configuredProvider: activeLlmConfig.provider,
+    geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
+    localModelCheck: 'on-demand via /api/models/detect',
     sentryTracing: Boolean(process.env.SENTRY_DSN),
-    popiaCompliance: 'Active - Act 4 of 2013 Sandboxed',
-    westernCapeTendersLoaded: SAMPLE_TENDERS.filter(t => t.province === 'Western Cape').length
+    authRequired: foundation.config.authRequired,
+    store: foundation.config.store,
+    privacyNote: 'PII redaction before AI processing currently covers ID-number and card-like digit sequences only.',
+    sampleTendersLoaded: SAMPLE_TENDERS.length
   });
 });
 
 // Document Ingestion: Clean extraction of PDF / Text / DOCX
-app.post('/api/parse-document', async (req: Request, res: Response) => {
+app.post('/api/parse-document', heavyOpLimiter, async (req: Request, res: Response) => {
   try {
     const { rawText, base64Data, filename } = req.body;
+
+    // Resource limits: reject oversized payloads before any parsing work.
+    if (typeof base64Data === 'string' && base64Data.length > 40_000_000) {
+      res.status(413).json({ success: false, error: 'document too large (max ~30MB PDF)' });
+      return;
+    }
+    if (typeof rawText === 'string' && rawText.length > 5_000_000) {
+      res.status(413).json({ success: false, error: 'text too large (max 5M characters)' });
+      return;
+    }
 
     // 1. If base64 binary provided
     if (base64Data) {
@@ -280,65 +345,20 @@ app.get('/api/scrape', async (req: Request, res: Response) => {
   try {
     const query = typeof req.query.q === 'string' ? req.query.q : undefined;
     const province = typeof req.query.province === 'string' ? req.query.province : undefined;
-    const result = await fetchSouthAfricanTenders(query, province);
+    // Paid SerpApi credits are consumed only for a signed-in tenant with an
+    // active subscription - in every mode. Everyone else gets the sample feed.
+    const allowSerpApi = await foundation.serpApiAccess(req);
+    const result = await fetchSouthAfricanTenders(query, province, { allowSerpApi });
+    if (!result.serpApiConsumed) await foundation.releaseConsumption(req, 'serpapi');
     res.json(result);
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Live Sync with etenders.gov.za portal
-app.post('/api/etenders/sync', async (req: Request, res: Response) => {
-  try {
-    const result = await fetchSouthAfricanTenders(undefined, 'Western Cape');
-    
-    // Register discovered items into in-memory store
-    result.leads.forEach(l => {
-      if (!inMemoryTenderStore.has(l.referenceNumber)) {
-        inMemoryTenderStore.set(l.referenceNumber, {
-          title: l.title,
-          referenceNumber: l.referenceNumber,
-          issuingDepartment: l.department,
-          closingDate: l.closingDate,
-          province: l.province,
-          category: l.category,
-          cidbGradingRequired: l.cidbGrading,
-          estimatedBudget: l.budgetEst,
-          rawTextExcerpt: l.rawSampleText || l.snippet,
-          extractedComplianceChecklist: {
-            csdRequired: l.csdMandatory,
-            sarsPinRequired: true,
-            bbbeeRequired: true,
-            coidaRequired: Boolean(l.cidbGrading),
-            additionalDocuments: ['SBD 1', 'SBD 4', 'SBD 6.1']
-          },
-          evaluationCriteria: {
-            preferencePointsSystem: '80/20',
-            technicalThresholdPercentage: 70
-          },
-          createdAt: new Date()
-        });
-      }
-    });
-
-    res.json({
-      success: true,
-      syncedCount: result.syncedCount,
-      westernCapeCount: result.leads.filter(l => l.province.includes('Western Cape')).length,
-      source: result.source,
-      isLiveEtendersPortal: result.isLiveEtendersPortal,
-      timestamp: new Date().toISOString()
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Tender List
-app.get('/api/tenders', (req: Request, res: Response) => {
-  const tenders = Array.from(inMemoryTenderStore.values());
-  res.json({ success: true, count: tenders.length, tenders });
-});
+// Tender feed (sync + tenant-aware listing) - shared implementation with the
+// test harness so route security is exercised against the real handlers.
+registerTenderFeedRoutes(app, { foundation, store: inMemoryTenderStore });
 
 // Models Registry & Switcher
 app.get('/api/models', (req: Request, res: Response) => {
@@ -351,9 +371,18 @@ app.get('/api/models', (req: Request, res: Response) => {
 });
 
 // Detect Local Models (Gemma, Llama 3.1 8B, Ollama, LM Studio, vLLM)
-app.get('/api/models/detect', async (req: Request, res: Response) => {
+// Requires a signed-in account in every mode: even loopback-only, an
+// anonymous probe endpoint would let the public internet map which model
+// runners and ports are live on this host.
+app.get('/api/models/detect', foundation.requireAdmin, async (req: Request, res: Response) => {
   try {
     const customEndpoint = typeof req.query.endpoint === 'string' ? req.query.endpoint : undefined;
+    // SSRF guard: model detection may only probe loopback runners on this
+    // host. An arbitrary URL here would let anyone port-scan through us.
+    if (customEndpoint && !isLoopbackEndpoint(customEndpoint)) {
+      res.status(400).json({ success: false, error: 'endpoint must be a loopback address (localhost / 127.0.0.1 / ::1)' });
+      return;
+    }
     const report = await detectLocalModels(customEndpoint);
 
     // If local models were detected and current provider is local, optionally update PLATFORM_MODELS availability
@@ -369,63 +398,113 @@ app.get('/api/models/detect', async (req: Request, res: Response) => {
       report,
       activeModel: activeLlmConfig.modelId,
       activeProvider: activeLlmConfig.provider,
-      autoFailoverToCloud: true
+      cloudFailoverConfigured: Boolean(process.env.GEMINI_API_KEY),
+      cloudFailoverPolicy: 'Paid cloud AI is used only for subscribed accounts.'
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.post('/api/models/active', (req: Request, res: Response) => {
+// Engine selection is per-tenant, from a server-side allowlist only. The old
+// version of this route accepted provider/baseUrl/apiKey from the request body
+// and echoed the full config - including the server's paid API key - back to
+// anyone. baseUrl and apiKey are never accepted from clients now.
+app.post('/api/models/active', foundation.requireAdmin, async (req: Request, res: Response) => {
   try {
-    const { modelId, provider, baseUrl, apiKey, temperature } = req.body;
-    const updated = updateActiveLlmConfig({
-      modelId: modelId || activeLlmConfig.modelId,
-      provider: provider || activeLlmConfig.provider,
-      baseUrl: baseUrl || activeLlmConfig.baseUrl,
-      apiKey: apiKey !== undefined ? apiKey : activeLlmConfig.apiKey,
-      temperature: temperature !== undefined ? Number(temperature) : activeLlmConfig.temperature
-    });
-    res.json({ success: true, activeConfig: updated });
+    const { modelId } = req.body || {};
+    if (typeof modelId !== 'string' || !modelId) {
+      res.status(400).json({ success: false, error: 'modelId required' });
+      return;
+    }
+    const allowed = PLATFORM_MODELS.filter(m => m.isAvailable && !m.isDemo).map(m => m.id);
+    if (!(allowed as string[]).includes(modelId)) {
+      res.status(400).json({ success: false, error: 'unknown_or_unavailable_model', allowed });
+      return;
+    }
+    const existing = await foundation.repos.profiles.get(req.auth!.tenantId);
+    const merged = { ...(existing ? existing.profile : {}), llmModelId: modelId as any };
+    await foundation.repos.profiles.put({ tenantId: req.auth!.tenantId, profile: merged, updatedAt: new Date() });
+    res.json({ success: true, selectedModelId: modelId, serverDefault: publicLlmConfigView() });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
   }
 });
 
 // POPIA Profile Get & Update
-app.get('/api/profile', (req: Request, res: Response) => {
-  res.json({ success: true, profile: userSmeProfile });
+// Session required in EVERY mode: no company profile - not even the demo
+// sample - is served over the API to anonymous callers. The signed-out demo
+// never reads this endpoint (its sample lives client-side in the analyzer).
+app.get('/api/profile', foundation.requireAuth, async (req: Request, res: Response) => {
+  const stored = await foundation.repos.profiles.get(req.auth!.tenantId);
+  res.json({ success: true, profile: stored ? stored.profile : {} });
 });
 
-app.post('/api/profile', (req: Request, res: Response) => {
+// Saving a profile requires an account in EVERY mode: the signed-out demo
+// profile is read-only sample data, and a shared writable global would leak
+// one visitor's company details to every other visitor.
+app.post('/api/profile', foundation.requireAuth, async (req: Request, res: Response) => {
   try {
-    const updated = { ...userSmeProfile, ...req.body };
-    userSmeProfile = updated;
-    res.json({ success: true, profile: userSmeProfile, message: 'POPIA SME profile updated securely.' });
+    const existing = await foundation.repos.profiles.get(req.auth!.tenantId);
+    const merged = { ...(existing ? existing.profile : {}), ...req.body };
+    await foundation.repos.profiles.put({ tenantId: req.auth!.tenantId, profile: merged, updatedAt: new Date() });
+    res.json({ success: true, profile: merged, message: 'SME profile updated.' });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
   }
 });
 
-// RFP Pipeline Execution (Mastra + Sentry Agent Tracing + Open LLMs + Auto PDF decoding)
-app.post('/api/analyze', async (req: Request, res: Response) => {
+// RFP Pipeline Execution. The request body carries document text and profile
+// context ONLY: the engine (model/baseUrl) is resolved server-side from the
+// tenant's allowlisted selection, and paid cloud AI runs solely for
+// subscribed accounts. If the pipeline fails, the consumed analysis unit is
+// released so a missing key or failed run never bills the tenant.
+app.post('/api/analyze', heavyOpLimiter, async (req: Request, res: Response) => {
   try {
-    const { rawText, referenceId, companyProfile, llmConfig } = req.body;
+    const { rawText, referenceId, companyProfile } = req.body || {};
 
     if (!rawText || typeof rawText !== 'string') {
       res.status(400).json({ success: false, error: 'rawText string is required for RFP analysis' });
       return;
     }
+    if (rawText.length > 2_000_000) {
+      res.status(413).json({ success: false, error: 'rawText too large (max 2M characters per analysis)' });
+      return;
+    }
 
     const ref = referenceId || `RFP-ZA-${Date.now().toString().slice(-5)}`;
-    const profile = companyProfile || userSmeProfile;
+    let profile = companyProfile || (Object.keys(userSmeProfile).length ? userSmeProfile : undefined);
+    let selectedModelId: string | null = null;
+    if (req.auth) {
+      const stored = await foundation.repos.profiles.get(req.auth.tenantId);
+      if (stored?.profile) {
+        selectedModelId = typeof (stored.profile as any).llmModelId === 'string' ? (stored.profile as any).llmModelId : null;
+        if (!companyProfile) profile = stored.profile;
+      }
+    }
+    const llmConfig = resolveServerLlmConfig(selectedModelId);
+    const allowCloudLlm = await foundation.cloudLlmAccess(req);
 
-    const result = await executeRfpPipeline({
-      rawText,
-      referenceId: ref,
-      companyProfile: profile,
-      llmConfig
-    });
+    let result;
+    try {
+      result = await executeRfpPipeline({
+        rawText,
+        referenceId: ref,
+        companyProfile: profile,
+        llmConfig,
+        allowCloudLlm
+      });
+    } catch (pipelineErr) {
+      await foundation.releaseConsumption(req, 'analysis');
+      throw pipelineErr;
+    }
+
+    if (req.auth && result.record) {
+      result.record.tenantId = req.auth.tenantId;
+      if (result.record.referenceNumber) {
+        inMemoryTenderStore.set(result.record.referenceNumber, result.record);
+      }
+    }
 
     res.json({
       success: true,
@@ -443,15 +522,18 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
 
 // ======================== FINE-TUNING & DATASET STUDIO ========================
 
-// Datasets
-app.get('/api/finetune/datasets', (req: Request, res: Response) => {
-  res.json({ success: true, datasets: inMemoryDatasets });
+// Datasets. Curated samples are public read; anything a user creates belongs
+// to their tenant and requires an account in every mode.
+app.get('/api/finetune/datasets', foundation.requireAdmin, (req: Request, res: Response) => {
+  const visible = inMemoryDatasets.filter(d => !d.tenantId || (req.auth && d.tenantId === req.auth.tenantId));
+  res.json({ success: true, datasets: visible });
 });
 
-app.post('/api/finetune/datasets', (req: Request, res: Response) => {
+app.post('/api/finetune/datasets', foundation.requireAdmin, (req: Request, res: Response) => {
   try {
     const { name, description, category, examples, format } = req.body;
     const newDs: IFineTuningDataset = {
+      tenantId: req.auth!.tenantId,
       id: `dataset-custom-${Date.now()}`,
       name: name || 'Custom Procurement Dataset',
       description: description || 'User-defined training dataset',
@@ -471,9 +553,11 @@ app.post('/api/finetune/datasets', (req: Request, res: Response) => {
 });
 
 // Auto-synthesize dataset pairs from active tenders
-app.post('/api/finetune/datasets/generate-from-tenders', (req: Request, res: Response) => {
+app.post('/api/finetune/datasets/generate-from-tenders', foundation.requireAdmin, (req: Request, res: Response) => {
   try {
-    const tenders = Array.from(inMemoryTenderStore.values());
+    // Only this tenant's own records plus the public sample feed.
+    const tenders = Array.from(inMemoryTenderStore.values())
+      .filter((t: any) => !t.tenantId || t.tenantId === req.auth!.tenantId);
     const generatedExamples = tenders.map((t, idx) => ({
       id: `gen-ex-${idx + 1}-${Date.now().toString().slice(-4)}`,
       domain: (t.province?.includes('Western Cape') ? 'Western Cape SCM' : (t.cidbGradingRequired ? 'CIDB Act' : 'PPPFA 2022')) as any,
@@ -518,21 +602,26 @@ app.post('/api/finetune/datasets/generate-from-tenders', (req: Request, res: Res
   }
 });
 
-// Fine-Tuning Jobs
-app.get('/api/finetune/jobs', (req: Request, res: Response) => {
-  res.json({ success: true, jobs: inMemoryJobs });
+// Fine-Tuning Jobs. Sample jobs are public read; a tenant's jobs are private.
+app.get('/api/finetune/jobs', foundation.requireAdmin, (req: Request, res: Response) => {
+  const visible = inMemoryJobs.filter(j => !j.tenantId || (req.auth && j.tenantId === req.auth.tenantId));
+  res.json({ success: true, jobs: visible });
 });
 
-// Start Fine-Tuning Pipeline
-app.post('/api/finetune/start', (req: Request, res: Response) => {
+// Start Fine-Tuning Pipeline. NOTE: this is a SIMULATED training run for the
+// studio preview - it performs no GPU execution and produces no adapter
+// artifact. Real training runs from the exported Python script.
+app.post('/api/finetune/start', foundation.requireAdmin, (req: Request, res: Response) => {
   try {
     const { baseModel, datasetId, loraRank, loraAlpha, epochs, learningRate } = req.body;
-    const dataset = inMemoryDatasets.find(d => d.id === datasetId) || inMemoryDatasets[0];
+    const dataset = inMemoryDatasets.find(d => d.id === datasetId && (!d.tenantId || d.tenantId === req.auth!.tenantId)) || inMemoryDatasets[0];
     
     const jobId = `ft-job-${Date.now().toString().slice(-5)}`;
     const outputName = `${baseModel.includes('llama') ? 'Llama 3.1 8B' : 'Gemma 2 9B'} - SA Procurement LoRA (Job ${jobId})`;
 
     const newJob: IFineTuningJob = {
+      tenantId: req.auth!.tenantId,
+      simulated: true,
       id: jobId,
       jobName: `job-${jobId}`,
       baseModel: baseModel || 'meta-llama/Meta-Llama-3.1-8B-Instruct',
@@ -589,45 +678,39 @@ app.post('/api/finetune/start', (req: Request, res: Response) => {
       }
     }, 1800);
 
-    res.json({ success: true, job: newJob });
+    res.json({ success: true, job: newJob, simulated: true, message: 'Simulated training run for the studio preview - no GPU execution, no adapter artifact is produced. Use the exported Python script for real training.' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// Deploy fine-tuned model
-app.post('/api/finetune/deploy', (req: Request, res: Response) => {
+// "Deploy" a fine-tuned model. Simulated preview only: it does NOT switch the
+// active inference engine (there is no trained artifact to serve), and it can
+// only touch the caller's own simulated jobs. Accepts jobId in body or path.
+const deployHandler = (req: Request, res: Response) => {
   try {
-    const { jobId } = req.body;
-    const job = inMemoryJobs.find(j => j.id === jobId) || inMemoryJobs[0];
-
-    // Register into active platform models
-    const deployedModel: IPlatformModel = {
-      id: 'fine-tuned-sa-tender-8b',
-      name: job.outputModelName,
-      provider: 'custom-finetuned' as any,
-      baseArchitecture: job.baseModel.includes('llama') ? 'Llama 3.1 8B' : 'Gemma 2',
-      description: `Fine-tuned LoRA adapter trained on ${job.datasetName} (Final loss: ${job.currentLoss}).`,
-      isOpenWeights: true,
-      isFineTuned: true,
-      contextWindow: '32k tokens',
-      defaultEndpoint: 'http://localhost:11434/v1',
-      isAvailable: true
-    };
-
-    updateActiveLlmConfig({
-      modelId: deployedModel.id,
-      provider: deployedModel.provider as any
+    const jobId = req.params.jobId || (req.body || {}).jobId;
+    const job = inMemoryJobs.find(j => j.id === jobId && j.tenantId === req.auth!.tenantId);
+    if (!job) {
+      res.status(404).json({ success: false, error: 'job_not_found' });
+      return;
+    }
+    res.json({
+      success: true,
+      simulated: true,
+      message: `Simulated deploy of "${job.outputModelName}". No model artifact exists yet, so the active engine was not changed.`,
+      engineChanged: false
     });
-
-    res.json({ success: true, message: `Deployed ${job.outputModelName} to active inference pipeline.`, model: deployedModel });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
-});
+};
+app.post('/api/finetune/deploy', foundation.requireAdmin, deployHandler);
+app.post('/api/finetune/deploy/:jobId', foundation.requireAdmin, deployHandler);
 
-// Side-by-side inference evaluator
-app.post('/api/finetune/compare', async (req: Request, res: Response) => {
+// Side-by-side evaluator. Both outputs are FIXED ILLUSTRATIVE EXAMPLES, not
+// live model inference - labelled as such in the response.
+app.post('/api/finetune/compare', foundation.requireAdmin, async (req: Request, res: Response) => {
   try {
     const { prompt } = req.body;
     const testPrompt = prompt || 'What are the mandatory returnables and PPPFA formula for Drakenstein Municipality basic services tender?';
@@ -652,10 +735,12 @@ app.post('/api/finetune/compare', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
+      illustrative: true,
+      note: 'Illustrative example outputs for comparison UI - not live model inference.',
       prompt: testPrompt,
-      baseModel: 'meta-llama/Meta-Llama-3.1-8B-Instruct (Baseline)',
+      baseModel: 'meta-llama/Meta-Llama-3.1-8B-Instruct (Baseline, example output)',
       baseOutput: baseResponse,
-      fineTunedModel: 'Llama 3.1 8B - SA Procurement LoRA v1 (Domain Adapted)',
+      fineTunedModel: 'Llama 3.1 8B - SA Procurement LoRA v1 (example output, simulated)',
       fineTunedOutput: fineTunedResponse
     });
   } catch (err: any) {
@@ -664,7 +749,7 @@ app.post('/api/finetune/compare', async (req: Request, res: Response) => {
 });
 
 // Standalone Python GPU Training Script Export
-app.get('/api/finetune/export-script', (req: Request, res: Response) => {
+app.get('/api/finetune/export-script', foundation.requireAdmin, (req: Request, res: Response) => {
   const pythonScript = `# ==============================================================================
 # TenderAgent South Africa - Llama 3.1 8B / Gemma 2 LoRA Fine-Tuning Pipeline
 # Optimized for Unsloth / Hugging Face PEFT on NVIDIA GPUs (RTX 3090/4090, A100, H100)
@@ -728,9 +813,13 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    // The built frontend lives at ./dist relative to the repo root (tsx dev)
+    // or next to the compiled bundle at dist-server/ (production image).
+    const distDir = [path.resolve(__dirname, 'dist'), path.resolve(__dirname, '..', 'dist'), path.resolve(process.cwd(), 'dist')]
+      .find((d) => fs.existsSync(path.join(d, 'index.html'))) || path.resolve(__dirname, 'dist');
+    app.use(express.static(distDir));
     app.get('*', (req: Request, res: Response) => {
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.resolve(distDir, 'index.html'));
     });
   }
 

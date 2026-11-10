@@ -7,18 +7,29 @@ import { IUserProfile } from '../lib/types/tender';
 
 interface ProfileVaultProps {
   userProfile: IUserProfile;
+  /** 'unavailable' means the account profile could not be LOADED - not that it is empty. */
+  profileStatus?: 'loading' | 'ready' | 'unavailable';
   onUpdateProfile: (updated: IUserProfile) => void;
   isDarkMode?: boolean;
 }
 
 export const ProfileVault: React.FC<ProfileVaultProps> = ({
   userProfile,
+  profileStatus = 'ready',
   onUpdateProfile,
   isDarkMode = false
 }) => {
   const [formData, setFormData] = useState<IUserProfile>(userProfile);
+  // Keep the form in sync with the loaded account profile (mount may precede
+  // the fetch; sign-in swaps the identity). Never sync while unavailable -
+  // the empty defaults are placeholders for rendering, not the account's data.
+  React.useEffect(() => {
+    if (profileStatus === 'ready') setFormData(userProfile);
+  }, [userProfile, profileStatus]);
+  const unavailable = profileStatus === 'unavailable';
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleChange = (field: keyof IUserProfile, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -35,24 +46,27 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      const data = await res.json();
-      if (data.success) {
+      const data = await res.json().catch(() => null);
+      if (res.status === 401) {
+        setSaveError('Sign in (or create an account) to save your profile. The signed-out workspace is read-only sample data.');
+      } else if (res.ok && data?.success) {
+        setSaveError(null);
         onUpdateProfile(data.profile);
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        setSaveError(data?.error ? `Save failed: ${data.error}` : 'Save failed - please try again.');
       }
     } catch (err) {
       console.warn('[Profile Save error]:', err);
-      onUpdateProfile(formData);
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
+      setSaveError('Save failed - no connection to the server.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const hasCsd = formData.csdNumber.toUpperCase().startsWith('MAAA');
-  const hasTaxPin = Boolean(formData.taxComplianceStatusPin.trim());
+  const hasCsd = (formData.csdNumber || '').toUpperCase().startsWith('MAAA');
+  const hasTaxPin = Boolean((formData.taxComplianceStatusPin || '').trim());
   const hasBbbee = formData.bbbeeLevel >= 1 && formData.bbbeeLevel <= 8;
   const hasCoida = formData.coidaGoodStandingValid;
 
@@ -69,31 +83,35 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
             <div className="flex items-center gap-2 mb-1.5">
               <ShieldCheck className="w-5 h-5 text-emerald-600" />
               <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                POPIA-Protected SME Credential Vault
+                SME Credential Vault
               </h2>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                Act 4 of 2013 Sandboxed
-              </span>
             </div>
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} leading-relaxed max-w-2xl`}>
               Store your South African statutory procurement credentials.
-              All CSD numbers, tax compliance PINs, and B-BBEE certificates are sandboxed and injected
-              only into your locally-generated bid proposal skeletons.
+              CSD numbers, tax compliance PINs, and B-BBEE details are saved to your account and inserted
+              into the bid proposal skeletons you generate.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
             <div className={`p-2.5 rounded-lg border text-center ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
-              <span className={`text-[10px] uppercase font-semibold block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Readiness</span>
-              <span className="text-sm font-bold font-mono text-emerald-600">{readinessPct}% Compliant</span>
+              <span className={`text-[10px] uppercase font-semibold block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Profile completeness</span>
+              <span className="text-sm font-bold font-mono text-emerald-600">{readinessPct}% of fields on file</span>
             </div>
           </div>
         </div>
       </div>
 
       {/* Main Form */}
+      {unavailable && (
+        <div role="alert" className={`mb-4 rounded-xl border px-4 py-3 text-xs font-medium flex items-center gap-2 ${isDarkMode ? 'bg-amber-950/40 border-amber-800 text-amber-300' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>Your saved profile could not be loaded - this needs a connection. The empty fields below are NOT your saved details, and saving is paused so nothing gets overwritten.</span>
+        </div>
+      )}
       <form onSubmit={handleSave} className="space-y-6">
+      <fieldset disabled={unavailable} className="space-y-6 disabled:opacity-60">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
           {/* Left Column: Statutory Credentials */}
@@ -102,7 +120,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
               <h3 className={`text-sm font-semibold flex items-center gap-2 border-b pb-3 ${isDarkMode ? 'text-white border-slate-800' : 'text-slate-900 border-slate-200'
                 }`}>
                 <FileCheck className="w-4 h-4 text-emerald-600" />
-                <span>Statutory Government Credentials (Mandatory Returnables)</span>
+                <span>Business details used in your bid skeletons</span>
               </h3>
 
               {/* Company Legal Name */}
@@ -131,7 +149,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="2023/123456/07"
+                    placeholder="Format: YYYY/NNNNNN/NN"
                     value={formData.registrationNumber}
                     onChange={(e) => handleChange('registrationNumber', e.target.value)}
                     className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
@@ -144,12 +162,12 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                 <div>
                   <label className={`text-xs block mb-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                     National Treasury CSD Number:
-                    {hasCsd && <span className="text-emerald-600 ml-1 text-[10px] font-mono">Verified MAAA</span>}
+                    {hasCsd && <span className="text-slate-400 ml-1 text-[10px] font-mono">on file</span>}
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="MAAA0821945"
+                    placeholder="Format: MAAA + 10 digits"
                     value={formData.csdNumber}
                     onChange={(e) => handleChange('csdNumber', e.target.value.toUpperCase())}
                     className={`w-full border rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-emerald-500 ${isDarkMode
@@ -169,7 +187,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="TCS-9482104-Z"
+                    placeholder="Your SARS TCS PIN"
                     value={formData.taxComplianceStatusPin}
                     onChange={(e) => handleChange('taxComplianceStatusPin', e.target.value)}
                     className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
@@ -210,8 +228,9 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                         : 'bg-slate-50 border-slate-300 text-slate-800'
                       }`}
                   >
+                    <option value={0}>Not set</option>
                     {[1, 2, 3, 4, 5, 6, 7, 8].map(lvl => (
-                      <option key={lvl} value={lvl}>Level {lvl} (135% recognition for L1)</option>
+                      <option key={lvl} value={lvl}>Level {lvl}</option>
                     ))}
                   </select>
                 </div>
@@ -245,7 +264,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                       id="coida-check"
                       checked={formData.coidaGoodStandingValid}
                       onChange={(e) => handleChange('coidaGoodStandingValid', e.target.checked)}
-                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                     />
                     <label htmlFor="coida-check" className={`text-xs font-medium cursor-pointer ${isDarkMode ? 'text-slate-200' : 'text-slate-800'
                       }`}>
@@ -338,10 +357,10 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                 }`}>
                 <div className="flex items-center gap-1.5 font-semibold text-emerald-600 text-xs">
                   <Lock className="w-3.5 h-3.5" />
-                  <span>POPIA Protection Guarantee</span>
+                  <span>How your data is handled</span>
                 </div>
                 <p className="text-[11px] leading-relaxed">
-                  In compliance with Act 4 of 2013, company registration and financial profiles are never shared with unauthorized external LLM brokers. Ingestion tasks operate in isolated containers.
+                  Your profile is stored with your account and used to generate bid skeletons. PII redaction before AI processing currently covers ID-number and card-like digit sequences only.
                 </p>
               </div>
 
@@ -352,7 +371,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                 className="w-full py-2.5 px-4 rounded-lg font-semibold text-xs flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-sm"
               >
                 {isSaving ? (
-                  <span>Securing Credentials...</span>
+                  <span>Saving...</span>
                 ) : saveSuccess ? (
                   <>
                     <Check className="w-4 h-4 text-white" />
@@ -361,15 +380,19 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                 ) : (
                   <>
                     <Save className="w-4 h-4" />
-                    <span>Save & Encrypt SME Profile</span>
+                    <span>Save SME Profile</span>
                   </>
                 )}
               </button>
+              {saveError && (
+                <p className="text-amber-600 text-xs font-medium text-center">{saveError}</p>
+              )}
 
             </div>
           </div>
 
         </div>
+      </fieldset>
       </form>
 
     </div>

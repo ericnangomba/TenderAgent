@@ -98,7 +98,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, isProce
           <div className="flex items-center gap-2">
             <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-300 bg-slate-900 border border-slate-800 px-2.5 py-1 rounded-md">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>POPIA Sandboxed</span>
+              <span>POPIA privacy controls</span>
               <span className="text-slate-500">·</span>
               <span className="text-slate-400">Act 4 of 2013</span>
             </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { FileText, CheckCircle2, AlertCircle, Copy, Check, Download, ExternalLink, HelpCircle, BookOpen } from 'lucide-react';
+import { FileText, CheckCircle2, AlertCircle, Copy, Check, Download, ExternalLink, HelpCircle, BookOpen, Scale, Building, ClipboardList } from 'lucide-react';
+import { PROCUREMENT_GUIDANCE, PROCUREMENT_FRAMEWORK_NOTE, type GuidanceLayer } from '../lib/data/procurementGuidance';
 
 interface SbdFormsGuideProps {
   isDarkMode: boolean;
@@ -15,8 +16,8 @@ export const SbdFormsGuide: React.FC<SbdFormsGuideProps> = ({ isDarkMode }) => {
       code: 'SBD 1',
       title: 'Invitation to Bid & Administrative Responsiveness',
       authority: 'National Treasury Transversal Contracting',
-      mandatory: true,
-      summary: 'Part A contains bid specifications and Part B contains terms and conditions for bidding. Mandatory returnable signed by authorized company representative.',
+      returnable: true,
+      summary: 'Part A contains bid specifications and Part B contains terms and conditions for bidding. A returnable signed by an authorized company representative where the tender calls for SBD 1.',
       keyClauses: [
         'Submission confirms unconditional acceptance of General Conditions of Contract (GCC)',
         'Tax Compliance Requirement: TCS PIN or verified CSD MAAA registration',
@@ -32,20 +33,20 @@ BID RESPONSE DOCUMENTS MUST BE DEPOSITED IN THE BID BOX SITUATED AT:
 [ORGAN_OF_STATE_ADDRESS]
 
 BIDDER SUMMARY:
-NAME OF BIDDER: Apex Strategic Solutions (Pty) Ltd
-POSTAL ADDRESS: PO Box 78491, Sandton, 2146
-STREET ADDRESS: 140 West Street, Sandton, Johannesburg
-TELEPHONE NUMBER: +27 (0)11 482 9200
-TAX COMPLIANCE STATUS PIN: TCS-9482104-Z
-CENTRAL SUPPLIER DATABASE (CSD) NO: MAAA0821945
-B-BBEE STATUS LEVEL: Level 1 Contributor (EME Sworn Affidavit)`
+NAME OF BIDDER: [YOUR REGISTERED NAME OR TRADING NAME]
+POSTAL ADDRESS: [POSTAL ADDRESS]
+STREET ADDRESS: [STREET ADDRESS]
+TELEPHONE NUMBER: [CONTACT NUMBER]
+TAX COMPLIANCE STATUS PIN: [YOUR SARS TCS PIN]
+CENTRAL SUPPLIER DATABASE (CSD) NO: [YOUR MAAA NUMBER]
+B-BBEE STATUS LEVEL: [LEVEL PER YOUR AFFIDAVIT OR CERTIFICATE]`
     },
     {
       id: 'sbd4',
       code: 'SBD 4',
       title: 'Bidder\'s Declaration of Interest (Consolidated)',
       authority: 'National Treasury SCM Instruction Note No. 03 of 2021/2022',
-      mandatory: true,
+      returnable: true,
       summary: 'Consolidates old SBD 4, SBD 8 (past SCM practices), and SBD 9 (prohibition of bid rigging) into a single strict statutory declaration.',
       keyClauses: [
         'Clause 2.1: Disclose whether any director/trustee/shareholder is employed by the organ of state',
@@ -75,13 +76,13 @@ Any person (natural or juristic) may make an offer or offers in terms of this in
       code: 'SBD 6.1',
       title: 'Preference Points Claim Form (PPR 2022)',
       authority: 'Preferential Procurement Regulations, 2022 (PPPFA)',
-      mandatory: true,
+      returnable: true,
       summary: 'Serves as a claim form for preference points for specific goals under the 80/20 or 90/10 point allocation systems.',
       keyClauses: [
         'Points for tenders equal to or below R50 Million: 80/20 Preference Point System',
         'Points for tenders above R50 Million: 90/10 Preference Point System',
-        'Specific Goals: B-BBEE Level status, black-women ownership, youth, military veterans',
-        'Proof of claim must be substantiated by SANAS accredited certificate or commissioner sworn affidavit'
+        'Specific goals are defined by the organ of state in each tender - B-BBEE level is one possible goal, not automatic',
+        'Evidence for a claimed goal is usually a SANAS-accredited certificate or sworn affidavit, as the tender specifies'
       ],
       sampleTemplate: `STANDARD BIDDING DOCUMENT 6.1 (SBD 6.1)
 PREFERENCE POINTS CLAIM FORM IN TERMS OF THE PREFERENTIAL PROCUREMENT REGULATIONS 2022
@@ -101,9 +102,9 @@ Supporting Evidence Attached: Commissioner of Oaths stamped EME B-BBEE Sworn Aff
     {
       id: 'cidb',
       code: 'CIDB Matrix',
-      title: 'Construction Industry Development Board Grading Matrix',
+      title: 'Construction Industry Development Board Grading (public sector)',
       authority: 'CIDB Act 38 of 2000',
-      mandatory: false,
+      returnable: false,
       summary: 'Specifies contractor capability limits for public sector civil and building engineering works.',
       keyClauses: [
         'Grade 1: Works up to R 500,000',
@@ -112,9 +113,11 @@ Supporting Evidence Attached: Commissioner of Oaths stamped EME B-BBEE Sworn Aff
         'Grade 4: Works up to R 6,000,000',
         'Grade 5: Works up to R 10,000,000',
         'Grade 6: Works up to R 20,000,000',
-        'Grade 7: Works up to R 40,000,000',
-        'Grade 8: Works up to R 130,000,000',
-        'Grade 9: Works with No Limit (> R130 Million)'
+        'Grade 7: Works up to R 60,000,000',
+        'Grade 8: Works up to R 200,000,000',
+        'Grade 9: Works with no limit',
+        'Values per CIDB May 2026 guide (checked 10 Nov 2026); grade is per class of works',
+        'Available-capital criteria for grades 4-6 differ between CIDB documents - verify with CIDB'
       ],
       sampleTemplate: `CIDB CONTRACTOR GRADING DESIGNATIONS (SOUTH AFRICA)
 Class of Works Codes:
@@ -144,20 +147,20 @@ Class of Works Codes:
             <div className="flex items-center gap-2 mb-1">
               <BookOpen className="w-5 h-5 text-emerald-600" />
               <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                South African Standard Bidding Documents (SBD) Knowledgebase
+                Bidding documents and requirement rules
               </h2>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
                 SCM Statutes
               </span>
             </div>
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} leading-relaxed`}>
-              Official statutory returnables required for all South African National, Provincial, and Municipal government procurement.
+              Standard bidding documents and the rules behind common tender requirements. What applies to you depends on the buyer, your sector and the tender itself.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              Mandatory under PFMA Act 1 of 1999
+              Sources and check dates shown per rule
             </span>
           </div>
         </div>
@@ -187,11 +190,11 @@ Class of Works Codes:
                   {f.code}
                 </span>
                 <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
-                  f.mandatory 
+                  f.returnable 
                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
                     : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                 }`}>
-                  {f.mandatory ? 'Mandatory' : 'Industry'}
+                  {f.returnable ? 'Commonly returnable' : 'Reference'}
                 </span>
               </div>
               <div className="text-xs font-semibold leading-tight mb-1">{f.title}</div>
@@ -265,6 +268,67 @@ Class of Works Codes:
           </div>
         </div>
 
+      </div>
+
+      {/* What applies to you: sourced rules with applicability, no blanket lists */}
+      <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 space-y-4`}>
+        <div className="flex items-start gap-3">
+          <Scale className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+          <div>
+            <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              {PROCUREMENT_FRAMEWORK_NOTE.title}
+            </h3>
+            <p className={`text-xs leading-relaxed mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              {PROCUREMENT_FRAMEWORK_NOTE.text}
+            </p>
+            <a href={PROCUREMENT_FRAMEWORK_NOTE.source.url} target="_blank" rel="noreferrer"
+               className={`text-[11px] inline-flex items-center gap-1 mt-1 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'} hover:underline`}>
+              {PROCUREMENT_FRAMEWORK_NOTE.source.name} <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+          {PROCUREMENT_GUIDANCE.map((item) => (
+            <div key={item.id} className={`rounded-lg border p-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50/60'}`}>
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <span className={`text-xs font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>{item.title}</span>
+                <span className={`text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                  item.layer === 'law'
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                    : item.layer === 'sector-buyer'
+                      ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
+                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                }`}>
+                  {item.layer === 'law' ? 'Law / regulator' : item.layer === 'sector-buyer' ? 'Sector or buyer' : 'Per tender'}
+                </span>
+              </div>
+              <p className={`text-[11px] leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{item.summary}</p>
+              <p className={`text-[11px] leading-relaxed mt-1.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                <span className="font-semibold">Applies: </span>{item.appliesWhen}
+              </p>
+              <p className={`text-[11px] leading-relaxed mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                <span className="font-semibold">Next: </span>{item.nextStep}
+              </p>
+              {item.caveat && (
+                <p className={`text-[10px] leading-relaxed mt-1.5 italic ${isDarkMode ? 'text-amber-400/90' : 'text-amber-700'}`}>
+                  {item.caveat}
+                </p>
+              )}
+              <div className={`flex items-center justify-between mt-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                <a href={item.source.url} target="_blank" rel="noreferrer"
+                   className={`text-[10px] inline-flex items-center gap-1 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'} hover:underline`}>
+                  {item.source.name} <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+                <span className={`text-[9px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>checked {item.asOf}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className={`text-[10px] leading-relaxed ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          Not legal advice. The tender document and the buyer's supply-chain policy govern a specific bid, within the applicable law.
+        </p>
       </div>
 
     </div>

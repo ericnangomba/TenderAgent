@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import {
   Upload, FileText, CheckCircle, ShieldAlert, Layers, RefreshCw,
   ChevronRight, Building, Calendar, DollarSign, Award, CheckCircle2,
-  AlertCircle, Sparkles, Terminal, FileCode, Check, ShieldCheck
-} from 'lucide-react';
+  AlertCircle, Sparkles, Terminal, FileCode, Check, ShieldCheck, FileSearch
+, MinusCircle } from 'lucide-react';
 import { SAMPLE_TENDERS } from '../lib/data/sampleTenders';
 import { ITender, IUserProfile, ISentrySpanRecord, IBidResponseSkeleton } from '../lib/types/tender';
 
@@ -11,6 +11,8 @@ interface RfpAnalyzerProps {
   userProfile: IUserProfile;
   onOpenSkeleton: (skeleton: IBidResponseSkeleton) => void;
   onSwitchToCalculator: (pointsSystem: '80/20' | '90/10', tenderTitle: string) => void;
+  /** Operator flag: the model-switcher bar is platform tooling, not customer UI. */
+  isAdmin?: boolean;
   initialSelectedTender?: ITender | null;
   isDarkMode?: boolean;
 }
@@ -19,16 +21,14 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   userProfile,
   onOpenSkeleton,
   onSwitchToCalculator,
+  isAdmin = false,
   initialSelectedTender,
   isDarkMode = false
 }) => {
   const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(0);
-  const [rawText, setRawText] = useState<string>(
-    initialSelectedTender?.rawTextExcerpt || SAMPLE_TENDERS[0].rawTextExcerpt || ''
-  );
-  const [referenceId, setReferenceId] = useState<string>(
-    initialSelectedTender?.referenceNumber || SAMPLE_TENDERS[0].referenceNumber
-  );
+  const [showSamples, setShowSamples] = useState<boolean>(false);
+  const [rawText, setRawText] = useState<string>(initialSelectedTender?.rawTextExcerpt || '');
+  const [referenceId, setReferenceId] = useState<string>(initialSelectedTender?.referenceNumber || '');
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [traceLogs, setTraceLogs] = useState<string[]>([]);
   const [spans, setSpans] = useState<ISentrySpanRecord[]>([]);
@@ -44,6 +44,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
   // Check local models on mount
   React.useEffect(() => {
+    if (!isAdmin) return; // model detection is an operator endpoint
     fetch('/api/models/detect')
       .then(r => r.json())
       .then(d => {
@@ -59,7 +60,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         }
       })
       .catch(() => setIsLocalOnline(false));
-  }, []);
+  }, [isAdmin]);
 
   // Detect raw PDF binary stream
   const isRawPdfStream = rawText.trim().startsWith('%PDF-') || (rawText.includes('%PDF-') && rawText.includes('endobj'));
@@ -157,6 +158,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
   const executePipeline = async () => {
     setIsUploading(true);
+    window.dispatchEvent(new CustomEvent('tenderagent:busy', { detail: true }));
     setTraceLogs([]);
     setSpans([]);
     setExtractedData(null);
@@ -200,12 +202,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
       }
 
       const initialLogs = [
-        '[Sentry Trace] Initializing transaction span: "RFP Upload Ingestion Channel" (op: agent.pipeline)',
-        '[POPIA Sandbox] Enforcing Protection of Personal Information Act boundary. Redacting confidential identifiers...',
-        `[Mastra Engine] Booting localized agent context using model: ${activeModel}...`,
-        '[Mastra Engine] Verifying local runner (Ollama / vLLM on localhost:11434) with Cloud Failover policy...',
-        '[Sentry Trace] Triggering sub-span execution loop: "Compliance Information Extraction Tactic" (op: agent.llm.call)',
-        '[Compliance Core] Parsing South African parameters (CSD, SARS PIN, B-BBEE, CIDB, COIDA, SBD 1/4/6.1)...'
+        'Submitting document to the analysis pipeline...',
+        `Configured engine: ${activeModel}. The server trace below reports what actually ran.`,
       ];
 
       for (let i = 0; i < initialLogs.length; i++) {
@@ -238,9 +236,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
       const preset = SAMPLE_TENDERS[selectedPresetIndex] || SAMPLE_TENDERS[0];
       setTraceLogs(prev => [
         ...prev,
-        '⚠️ [Auto-Failover] Automatic fallback to Deterministic South African Statutory Procurement Compliance Engine...',
-        '[Mastra Engine] Matching extracted blocks against structural standard constraints...',
-        '[Sentry Trace] Finalizing transaction loop. Saving payload configuration details directly to MongoDB Atlas Index.'
+        'Analysis request failed - showing the selected sample tender as a preview instead.',
       ]);
       setExtractedData({
         title: preset.title,
@@ -263,13 +259,25 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
       });
     } finally {
       setIsUploading(false);
+      window.dispatchEvent(new CustomEvent('tenderagent:busy', { detail: false }));
     }
   };
+
+  // What THIS tender's text lists. Both result shapes (live API record and
+  // sample-tender preview) are normalized here. false means "not found in
+  // this tender's text" - never proof the item is unnecessary.
+  const listed = extractedData ? {
+    csd: Boolean(extractedData.extractedComplianceChecklist?.csdRequired ?? extractedData.checklist?.csd),
+    sars: Boolean(extractedData.extractedComplianceChecklist?.sarsPinRequired ?? extractedData.checklist?.sars),
+    bbbee: Boolean(extractedData.extractedComplianceChecklist?.bbbeeRequired ?? extractedData.checklist?.bbbee),
+    coida: Boolean(extractedData.extractedComplianceChecklist?.coidaRequired ?? extractedData.checklist?.coida),
+    cidb: extractedData.cidbGradingRequired || extractedData.checklist?.cidb || null,
+  } : null;
 
   // Check SME eligibility against extracted requirements
   const isCsdOk = Boolean(userProfile.csdNumber);
   const isSarsOk = Boolean(userProfile.taxComplianceStatusPin);
-  const isBbbeeOk = Boolean(userProfile.bbbeeLevel <= 4);
+  const isBbbeeOk = Boolean(userProfile.bbbeeLevel >= 1 && userProfile.bbbeeLevel <= 4);
   const isCoidaOk = userProfile.coidaGoodStandingValid;
   const isCidbOk = !extractedData?.cidbGradingRequired || Boolean(userProfile.cidbGrading);
 
@@ -277,34 +285,22 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
     <div className="space-y-6 animate-in fade-in duration-300">
 
       {/* Top Banner / Context */}
-      <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 relative overflow-hidden`}>
+      <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-4 sm:p-6 relative overflow-hidden`}>
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xl">🇿🇦</span>
-              <h2 className={`text-xl font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                RFP Compliance Auditor & Response Synthesizer
+              <FileSearch className="w-6 h-6 text-emerald-700" />
+              <h2 className={`font-display text-lg sm:text-xl font-semibold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                Check what a tender asks for
               </h2>
-              <span className="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                POPIA Sandboxed
-              </span>
             </div>
-            <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'} max-w-2xl leading-relaxed`}>
-              Analyze state-issued and corporate RFP documents for mandatory returnables (CSD, SARS TCS PIN, B-BBEE, CIDB, COIDA)
-              and synthesize complete bid response skeletons aligned with Preferential Procurement Regulations 2022.
+            <p className={`hidden sm:block text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'} max-w-2xl leading-relaxed`}>
+              Upload a tender document and get a clear list of its requirements - CSD registration, SARS TCS PIN, B-BBEE, CIDB and COIDA -
+              plus a response outline you can build your bid on.
             </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => onSwitchToCalculator('80/20', extractedData?.title || 'Active RFP')}
-              className={`px-3.5 py-2 text-xs font-medium rounded-lg border transition-colors ${isDarkMode
-                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
-                  : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-                }`}
-            >
-              80/20 Calculator
-            </button>
             <button
               onClick={() => userProfile && onOpenSkeleton(activeSkeleton || SAMPLE_TENDERS[0] as any)}
               disabled={!extractedData && !activeSkeleton}
@@ -323,7 +319,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-600 via-amber-500 to-slate-400 opacity-60" />
       </div>
 
-      {/* Main Grid: Upload & Presets (Left) + Sentry Live Trace Stream (Right) */}
+      {/* Main Grid: Upload & Presets (Left) + Execution Trace (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
         {/* Left Column: RFP Ingestion Form */}
@@ -333,24 +329,28 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               <div className="flex items-center gap-2">
                 <Upload className="w-5 h-5 text-emerald-600" />
                 <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Ingest RFP Target File
+                  Upload a tender document
                 </h3>
               </div>
-              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                POPIA Act 4 of 2013
-              </span>
             </div>
 
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} mb-4`}>
-              Drop corporate or state-issued tender guidelines PDF/text below. The analysis pipeline executes in local POPIA Sandboxed Container Mode.
+              Drop the tender PDF or paste its text below. Your checklist appears on this page when the check finishes.
             </p>
 
-            {/* Specimen Tenders Selector */}
+            {/* Sample tenders: optional, clearly labeled, collapsed by default */}
             <div className="mb-4">
-              <label className={`text-xs font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5 block`}>
-                Load Verified South African Tender Specimen:
-              </label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowSamples(v => !v)}
+                className={`text-xs font-medium flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showSamples ? 'rotate-90' : ''}`} />
+                No document handy? Try a sample tender
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 font-bold">SAMPLES</span>
+              </button>
+              {showSamples && (
+              <div className="grid grid-cols-2 gap-2 text-xs mt-2">
                 {SAMPLE_TENDERS.map((preset, idx) => (
                   <button
                     key={preset.id}
@@ -375,6 +375,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </button>
                 ))}
               </div>
+              )}
             </div>
 
             {/* File Upload Drag/Drop Box */}
@@ -457,7 +458,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               </div>
             )}
 
-            {/* AI Engine & Local Model Detection Bar */}
+            {/* AI Engine & Local Model Detection Bar (operator only) */}
+            {isAdmin && (
             <div className={`p-2.5 rounded-lg border mb-4 text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
               <div className="flex items-center justify-between mb-1.5">
@@ -471,11 +473,11 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </span>
                   <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    {isLocalOnline ? 'Local Runner Active' : 'Cloud Failover Active'}
+                    {isLocalOnline ? 'Local Runner Active' : 'Cloud AI mode'}
                   </span>
                 </div>
                 <div className="text-[10px] font-mono text-slate-500">
-                  Auto-Failover: 🛡️ Active
+                  Auto-Failover: configured
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -522,6 +524,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 </button>
               </div>
             </div>
+            )}
 
             {/* Reference ID & Raw Text Preview Area */}
             <div className="space-y-3 mb-5">
@@ -542,7 +545,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    RFP Document Excerpt:
+                    Tender text (optional if you upload a file):
                   </span>
                   <span className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     {rawText.length} characters {isRawPdfStream && '(Raw Stream)'}
@@ -556,7 +559,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       ? 'bg-slate-950 border-slate-800 text-slate-300'
                       : 'bg-slate-50 border-slate-300 text-slate-800'
                     } ${isRawPdfStream ? 'border-amber-500/60' : ''}`}
-                  placeholder="Paste government or corporate RFP text here, or paste PDF stream (%PDF-1.7)..."
+                  placeholder="Or paste the tender's text here..."
                 />
               </div>
             </div>
@@ -573,35 +576,50 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               {isUploading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                  <span>Analyzing Document Tiers with Mastra...</span>
+                  <span>Checking your document...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Process RFP Document with Gemma 2</span>
+                  <span>Check this document</span>
                 </>
               )}
             </button>
           </div>
         </div>
 
-        {/* Right Column: Sentry Live Execution Stream Trace */}
+        {/* Right Column: Execution Trace */}
         <div className="lg:col-span-6 space-y-4">
-          <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 flex flex-col h-full min-h-[440px]`}>
+          <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 flex flex-col h-full lg:min-h-[440px]`}>
             <div className="flex items-center justify-between mb-3 border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <Terminal className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <RefreshCw className={`w-5 h-5 ${isUploading ? 'text-emerald-600 animate-spin' : 'text-slate-400'}`} />
                 <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Sentry Live Execution Stream Trace
+                  Progress
                 </h3>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs text-slate-400 font-mono">op: agent.pipeline</span>
+                {isUploading ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs text-slate-500">Checking your document...</span>
+                  </>
+                ) : extractedData ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Finished - results below</span>
+                  </>
+                ) : (
+                  <span className="text-xs text-slate-400">Waiting</span>
+                )}
               </div>
             </div>
 
-            {/* Span badges row */}
+            {/* Technical details: collapsed by default - customer surface stays plain */}
+            {traceLogs.length > 0 && (
+              <details className="mb-3">
+                <summary className="text-xs text-slate-400 cursor-pointer select-none py-1">Technical details (engine trace)</summary>
+                <div className="mt-2">
             {spans.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {spans.map((sp) => (
@@ -617,44 +635,37 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               </div>
             )}
 
-            {/* Trace logs terminal box (authentic dark console interior) */}
-            <div className="bg-slate-950 rounded-lg p-4 font-mono text-xs flex-1 overflow-y-auto space-y-2 border border-slate-800 max-h-[360px] text-slate-200">
+            {/* Progress log: plain-language panel, light in both themes */}
+            <div className={`rounded-lg p-4 text-xs flex-1 overflow-y-auto space-y-2 border max-h-[360px] ${traceLogs.length > 0 ? '' : ''} ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
               {traceLogs.length === 0 ? (
-                <div className="text-slate-500 italic flex items-center gap-2 h-full justify-center py-16">
-                  <Terminal className="w-4 h-4" />
-                  <span>Awaiting submission stream trigger sequence... Click &ldquo;Process RFP Document&rdquo;.</span>
+                <div className="text-slate-400 flex flex-col items-center gap-2 h-full justify-center py-8 lg:py-16 text-center">
+                  <FileText className="w-5 h-5 text-slate-300" />
+                  <span>Nothing running yet. Upload a tender document and start the check - each step will be listed here as it happens.</span>
                 </div>
               ) : (
-                traceLogs.map((log, i) => {
-                  const isSentry = log.includes('Sentry Trace');
-                  const isMastra = log.includes('Mastra Engine');
-                  const isGemma = log.includes('Gemma AI Core');
-                  const isPopia = log.includes('POPIA Sandbox');
-                  const isMongo = log.includes('MongoDB');
-
-                  let textColor = 'text-slate-300';
-                  if (isSentry) textColor = 'text-purple-400 font-semibold';
-                  else if (isMastra) textColor = 'text-amber-400';
-                  else if (isGemma) textColor = 'text-cyan-300';
-                  else if (isPopia) textColor = 'text-emerald-400';
-                  else if (isMongo) textColor = 'text-blue-400';
-
-                  return (
-                    <div key={i} className={`flex items-start gap-2 leading-relaxed ${textColor}`}>
-                      <span className="text-slate-600 select-none text-[10px] shrink-0 pt-0.5">
-                        {String(i + 1).padStart(2, '0')}
-                      </span>
-                      <span>{log}</span>
-                    </div>
-                  );
-                })
+                traceLogs.map((log, i) => (
+                  <div key={i} className="flex items-start gap-2 leading-relaxed">
+                    <span className="text-slate-400 select-none text-[10px] shrink-0 pt-0.5 font-mono">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span>{log}</span>
+                  </div>
+                ))
               )}
             </div>
-
-            <div className={`mt-3 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'} flex items-center justify-between text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              <span>Instrumentation: Sentry Custom Spans & Transactions</span>
-              <span>POPIA Partition: Local Sandboxed Host</span>
-            </div>
+                </div>
+              </details>
+            )}
+            {traceLogs.length === 0 && (
+              <div className={`rounded-lg p-4 text-xs border ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                Nothing running yet. Upload a tender document and start the check.
+              </div>
+            )}
+            {extractedData && !isUploading && (
+              <div className={`rounded-lg p-4 text-xs border ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+                Your results are in the checklist below. Confirm every requirement against the tender's own returnables list.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -665,7 +676,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
           <div className="flex items-center gap-2">
             <CheckCircle className="w-5 h-5 text-emerald-600" />
             <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              Extracted Compliance Audits
+              Your compliance checklist
             </h3>
           </div>
           {extractedData && (
@@ -678,8 +689,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         {!extractedData ? (
           <div className="text-center py-12 text-slate-400">
             <ShieldAlert className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm">No analysis reports cached or initialized for this session.</p>
-            <p className="text-xs text-slate-400 mt-1">Select an RFP above and trigger the parsing pipeline.</p>
+            <p className="text-sm">Nothing checked yet.</p>
+            <p className="text-xs text-slate-400 mt-1">Upload a tender document above and its requirements will be listed here.</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -731,9 +742,9 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 <div className="flex items-center justify-between">
                   <h4 className={`font-semibold text-sm flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     <Layers className="w-4 h-4 text-emerald-600" />
-                    <span>Mandated Returnable Check</span>
+                    <span>Returnables Found in This Tender</span>
                   </h4>
-                  <span className="text-[11px] text-slate-400">Statutory Returnables</span>
+                  <span className="text-[11px] text-slate-400">From the tender text - its own returnables list governs</span>
                 </div>
 
                 <div className="space-y-2.5">
@@ -744,9 +755,15 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>CSD Registration</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Central Supplier Database (MAAA Number)</div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                      Mandatory
+                    {listed?.csd ? (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+                      Listed by tender
                     </span>
+                    ) : (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800">
+                      Not listed - check returnables
+                    </span>
+                    )}
                   </div>
 
                   {/* SARS */}
@@ -756,9 +773,15 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>SARS TCS PIN</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tax Compliance Status System PIN</div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                      Mandatory
+                    {listed?.sars ? (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+                      Listed by tender
                     </span>
+                    ) : (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800">
+                      Not listed - check returnables
+                    </span>
+                    )}
                   </div>
 
                   {/* B-BBEE */}
@@ -768,9 +791,15 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>B-BBEE Certificate / Affidavit</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Level 1-8 verification or EME affidavit</div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                      Mandatory
+                    {listed?.bbbee ? (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+                      Listed by tender
                     </span>
+                    ) : (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800">
+                      Not listed - check returnables
+                    </span>
+                    )}
                   </div>
 
                   {/* CIDB */}
@@ -780,11 +809,11 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>CIDB Grading</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Construction Industry Development Board</div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${extractedData.cidbGradingRequired || extractedData.checklist?.cidb
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${listed?.cidb
                         ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                         : 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800'
                       }`}>
-                      {extractedData.cidbGradingRequired || extractedData.checklist?.cidb || 'Not Required'}
+                      {listed?.cidb || 'Not listed - check returnables'}
                     </span>
                   </div>
 
@@ -795,11 +824,11 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>COIDA Letter of Good Standing</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Compensation Commissioner certification</div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${extractedData.extractedComplianceChecklist?.coidaRequired || extractedData.checklist?.coida
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${listed?.coida
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800'
                         : 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800'
                       }`}>
-                      {extractedData.extractedComplianceChecklist?.coidaRequired || extractedData.checklist?.coida ? 'Mandatory' : 'Optional'}
+                      {listed?.coida ? 'Listed by tender' : 'Not listed - check returnables'}
                     </span>
                   </div>
                 </div>
@@ -819,19 +848,25 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </div>
 
                   <div className={`text-3xl font-bold mb-2 font-mono ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {extractedData.evaluationCriteria?.preferencePointsSystem || extractedData.points || '80/20 System'}
+                    {(() => {
+                      const sys = extractedData.evaluationCriteria?.preferencePointsSystem || extractedData.points;
+                      return sys === '80/20' || sys === '90/10' || sys === '80/20 System' || sys === '90/10 System' ? sys : 'Not stated';
+                    })()}
                   </div>
 
                   <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} leading-relaxed mb-4`}>
-                    Determined using National Treasury formula allocation instructions matching targeted financial boundaries.
-                    {(extractedData.evaluationCriteria?.preferencePointsSystem === '90/10' || String(extractedData.points).includes('90'))
-                      ? ' Values estimated > R50 Million (90 Price / 10 Specific Goals).'
-                      : ' Values estimated <= R50 Million (80 Price / 20 Specific Goals).'}
+                    80/20 applies to values up to R50 million and 90/10 above it under the Preferential Procurement Regulations 2022; the tender's stated system and formula govern.
+                    {(() => {
+                      const sys = String(extractedData.evaluationCriteria?.preferencePointsSystem || extractedData.points || '');
+                      if (sys.includes('90')) return ' This text indicates 90/10 (90 Price / 10 Specific Goals), used for values above R50 million.';
+                      if (sys.includes('80')) return ' This text indicates 80/20 (80 Price / 20 Specific Goals), used for values up to R50 million.';
+                      return ' The tender text did not state the preference-point system - confirm 80/20 or 90/10 in the tender document.';
+                    })()}
                   </p>
 
                   <div className="flex items-center gap-2 p-2.5 rounded bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Meets local procurement goals & preferential scoring threshold.</span>
+                    <span>Confirm the preference-point system and specific goals stated in this tender document.</span>
                   </div>
                 </div>
 
@@ -847,31 +882,33 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
                   <div className="grid grid-cols-2 gap-2 text-[11px] mb-3">
                     <div className={`flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {isCsdOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
-                      <span>CSD: {userProfile.csdNumber || 'Missing'}</span>
+                      {!listed?.csd ? <MinusCircle className="w-3.5 h-3.5 text-slate-400" /> : isCsdOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
+                      <span>CSD: {!listed?.csd ? 'Not listed by this tender' : userProfile.csdNumber || 'Missing for a listed requirement'}</span>
                     </div>
 
                     <div className={`flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {isSarsOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
-                      <span>SARS PIN: {userProfile.taxComplianceStatusPin ? 'Active' : 'Missing'}</span>
+                      {!listed?.sars ? <MinusCircle className="w-3.5 h-3.5 text-slate-400" /> : isSarsOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
+                      <span>SARS PIN: {!listed?.sars ? 'Not listed by this tender' : userProfile.taxComplianceStatusPin ? 'On file' : 'Missing for a listed requirement'}</span>
                     </div>
 
                     <div className={`flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {isBbbeeOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
-                      <span>B-BBEE: Level {userProfile.bbbeeLevel} ({userProfile.bbbeeType})</span>
+                      {!listed?.bbbee ? <MinusCircle className="w-3.5 h-3.5 text-slate-400" /> : isBbbeeOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
+                      <span>B-BBEE: {!listed?.bbbee ? 'Not listed by this tender' : `Level ${userProfile.bbbeeLevel} (${userProfile.bbbeeType})`}</span>
                     </div>
 
                     <div className={`flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {isCidbOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
-                      <span>CIDB: {userProfile.cidbGrading || 'Not Required'}</span>
+                      {!listed?.cidb ? <MinusCircle className="w-3.5 h-3.5 text-slate-400" /> : isCidbOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
+                      <span>CIDB: {!listed?.cidb ? 'Not listed by this tender' : userProfile.cidbGrading || 'Missing for a listed requirement'}</span>
                     </div>
                   </div>
 
                   <div className={`p-2 rounded border text-[11px] flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-600'
                     }`}>
-                    <span>Overall Bid Eligibility:</span>
+                    <span>Profile fields on file:</span>
                     <span className="font-semibold text-emerald-600">
-                      {isCsdOk && isSarsOk && isCidbOk ? '100% Fully Responsive' : 'Action Required'}
+                      {listed && ((listed.csd && !isCsdOk) || (listed.sars && !isSarsOk) || (listed.cidb && !isCidbOk))
+                        ? <span className="text-rose-500">A listed requirement is missing from your profile</span>
+                        : 'Nothing listed is missing - confirm the tender\u2019s returnables list'}
                     </span>
                   </div>
                 </div>
@@ -885,7 +922,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               }`}>
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Payload stored securely under POPIA compliant identifier in MongoDB.</span>
+                <span>Finished checks are saved to your workspace.</span>
               </div>
 
               <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -899,7 +936,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
                     }`}
                 >
-                  Test Price Math (80/20)
+                  {(() => {
+                    const sys = extractedData.evaluationCriteria?.preferencePointsSystem;
+                    return sys === '80/20' || sys === '90/10' ? `Test Price Math (${sys})` : 'Test Price Math';
+                  })()}
                 </button>
 
                 <button

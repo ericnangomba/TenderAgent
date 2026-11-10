@@ -34,9 +34,9 @@ const TenderSchema: Schema = new Schema({
   province: { type: String, default: 'National / South Africa' },
   category: { type: String, default: 'General' },
   extractedComplianceChecklist: {
-    csdRequired: { type: Boolean, default: true },
-    sarsPinRequired: { type: Boolean, default: true },
-    bbbeeRequired: { type: Boolean, default: true },
+    csdRequired: { type: Boolean, default: false },
+    sarsPinRequired: { type: Boolean, default: false },
+    bbbeeRequired: { type: Boolean, default: false },
     coidaRequired: { type: Boolean, default: false },
     additionalDocuments: [{ type: String }]
   },

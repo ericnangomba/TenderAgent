@@ -1,0 +1,114 @@
+/** In-memory repositories: default driver for development and the whole test suite. */
+import type {
+  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile,
+} from './types';
+import type { BidApplication } from '../readiness';
+
+export function createMemoryRepos(): FoundationRepos {
+  const tenants = new Map<string, Tenant>();
+  const usersById = new Map<string, User>();
+  const usersByEmail = new Map<string, User>();
+  const sessionsById = new Map<string, Session>();
+  const sessionsByToken = new Map<string, Session>();
+  const entitlements = new Map<string, Entitlement>();
+  const billingEventIds = new Set<string>();
+  const usage = new Map<string, UsageCounter>();
+  const profiles = new Map<string, TenantProfile>();
+  const applications = new Map<string, BidApplication>();
+
+  const clone = <T>(v: T): T => structuredClone(v);
+
+  return {
+    tenants: {
+      async create(t) { tenants.set(t.id, clone(t)); },
+      async getById(id) { const t = tenants.get(id); return t ? clone(t) : null; },
+    },
+    users: {
+      async create(u) {
+        const key = u.email.toLowerCase();
+        if (usersByEmail.has(key)) throw new Error('email_already_registered');
+        usersById.set(u.id, clone(u));
+        usersByEmail.set(key, clone(u));
+      },
+      async getByEmail(email) { const u = usersByEmail.get(email.toLowerCase()); return u ? clone(u) : null; },
+      async getById(id) { const u = usersById.get(id); return u ? clone(u) : null; },
+    },
+    sessions: {
+      async create(s) { sessionsById.set(s.id, clone(s)); sessionsByToken.set(s.tokenHash, clone(s)); },
+      async getByTokenHash(h) { const s = sessionsByToken.get(h); return s ? clone(s) : null; },
+      async delete(id) {
+        const s = sessionsById.get(id);
+        if (s) { sessionsById.delete(id); sessionsByToken.delete(s.tokenHash); }
+      },
+    },
+    entitlements: {
+      async get(tenantId) { const e = entitlements.get(tenantId); return e ? clone(e) : null; },
+      async put(e) { entitlements.set(e.tenantId, clone(e)); },
+    },
+    billingEvents: {
+      async has(eventId) { return billingEventIds.has(eventId); },
+      async record(e) { billingEventIds.add(e.eventId); },
+    },
+    usage: {
+      async get(tenantId, periodKey) {
+        const key = `${tenantId}:${periodKey}`;
+        const existing = usage.get(key);
+        if (existing) return clone(existing);
+        return { tenantId, periodKey, analyses: 0, serpapiLookups: 0 };
+      },
+      async increment(tenantId, periodKey, field) {
+        const key = `${tenantId}:${periodKey}`;
+        const counter = usage.get(key) || { tenantId, periodKey, analyses: 0, serpapiLookups: 0 };
+        counter[field] += 1;
+        usage.set(key, counter);
+        return clone(counter);
+      },
+      async tryConsume(tenantId, periodKey, field, limit) {
+        // Single-threaded event loop: check + increment in one synchronous
+        // block is atomic within this process.
+        const key = `${tenantId}:${periodKey}`;
+        const counter = usage.get(key) || { tenantId, periodKey, analyses: 0, serpapiLookups: 0 };
+        if (counter[field] >= limit) return { allowed: false, counter: clone(counter) };
+        counter[field] += 1;
+        usage.set(key, counter);
+        return { allowed: true, counter: clone(counter) };
+      },
+      async release(tenantId, periodKey, field) {
+        const key = `${tenantId}:${periodKey}`;
+        const counter = usage.get(key) || { tenantId, periodKey, analyses: 0, serpapiLookups: 0 };
+        counter[field] = Math.max(0, counter[field] - 1);
+        usage.set(key, counter);
+        return clone(counter);
+      },
+    },
+    profiles: {
+      async get(tenantId) { const p = profiles.get(tenantId); return p ? clone(p) : null; },
+      async put(p) { profiles.set(p.tenantId, clone(p)); },
+    },
+    applications: {
+      async create(a) { applications.set(`${a.tenantId}:${a.id}`, clone(a)); },
+      async getById(tenantId, id) { const a = applications.get(`${tenantId}:${id}`); return a ? clone(a) : null; },
+      async listByTenant(tenantId) {
+        return [...applications.values()].filter((a) => a.tenantId === tenantId).map(clone);
+      },
+      async put(a) { applications.set(`${a.tenantId}:${a.id}`, clone(a)); },
+    },
+    stats: {
+      async overview(periodKey) {
+        const entitlementsByStatus: Record<string, number> = {};
+        for (const e of entitlements.values()) {
+          const key = e.status || 'none';
+          entitlementsByStatus[key] = (entitlementsByStatus[key] || 0) + 1;
+        }
+        let analyses = 0;
+        let serpapiLookups = 0;
+        for (const c of usage.values()) {
+          if (c.periodKey !== periodKey) continue;
+          analyses += c.analyses;
+          serpapiLookups += c.serpapiLookups;
+        }
+        return { tenants: tenants.size, users: usersById.size, entitlementsByStatus, usage: { analyses, serpapiLookups } };
+      },
+    },
+  };
+}

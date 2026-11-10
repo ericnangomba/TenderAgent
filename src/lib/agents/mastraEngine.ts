@@ -23,7 +23,14 @@ export interface ParseExecutionPayload {
   rawText: string;
   referenceId: string;
   companyProfile?: Partial<IUserProfile>;
+  /** SERVER-RESOLVED engine config only (see resolveServerLlmConfig). Client
+   *  request bodies are never trusted for model/baseUrl/apiKey: a caller-
+   *  supplied baseUrl would receive the server's paid API key (SSRF). */
   llmConfig?: Partial<IOpenLlmConfig>;
+  /** Paid cloud AI calls (Gemini) run only when the server proved the caller
+   *  may spend - a signed-in tenant with an active subscription. Defaults
+   *  false so demo traffic can never burn paid credits in any mode. */
+  allowCloudLlm?: boolean;
 }
 
 export interface PipelineExecutionResult {
@@ -37,21 +44,47 @@ export interface PipelineExecutionResult {
 // In-memory tender repository backup when standalone without active MongoDB server
 export const inMemoryTenderStore = new Map<string, any>();
 
-// Global Active LLM Configuration (Llama 3.1 8B, Gemma 2, Gemini 2.5 Flash, Ollama)
+// Server operator default engine config. Contains NO secrets: the Gemini key
+// lives only in process.env.GEMINI_API_KEY and is used solely by the Gemini SDK
+// call below - it is never attached to local-runner or other HTTP requests.
 export let activeLlmConfig: IOpenLlmConfig = {
   provider: 'llama-3.1-8b',
   modelId: 'meta-llama/Llama-3.1-8B-Instruct',
   baseUrl: 'http://localhost:11434/v1',
-  apiKey: process.env.GEMINI_API_KEY || '',
   temperature: 0.1,
   topP: 0.9,
   maxTokens: 2048,
   systemPrompt: 'You are an expert South African tender compliance auditor analyzing public procurement RFP documents under South African procurement legislation (PPPFA, Preferential Procurement Regulations 2022, CIDB Act, COIDA, POPIA, and National Treasury SCM instructions).'
 };
 
-export function updateActiveLlmConfig(config: Partial<IOpenLlmConfig>): IOpenLlmConfig {
-  activeLlmConfig = { ...activeLlmConfig, ...config };
-  return activeLlmConfig;
+/**
+ * Server-side registry of engines a signed-in tenant may select. Model IDs are
+ * allowlisted; baseUrl values are loopback constants chosen by the operator,
+ * never by the request. Anything not listed here cannot be selected.
+ */
+const SELECTABLE_ENGINES: Record<string, Partial<IOpenLlmConfig>> = {
+  'llama-3.1-8b-instruct': { provider: 'ollama', modelId: 'meta-llama/Llama-3.1-8B-Instruct', baseUrl: 'http://localhost:11434/v1' },
+  'gemma-2-9b-it': { provider: 'ollama', modelId: 'google/gemma-2-9b-it', baseUrl: 'http://localhost:11434/v1' },
+  'gemini-2.5-flash': { provider: 'gemini', modelId: 'gemini-2.5-flash' },
+  'gemma2-local': { provider: 'statutory', modelId: 'gemma2-local' },
+};
+
+/** Resolve a tenant's selected model id to a trusted server-side engine config. */
+export function resolveServerLlmConfig(selectedModelId?: string | null): Partial<IOpenLlmConfig> {
+  if (selectedModelId && SELECTABLE_ENGINES[selectedModelId]) {
+    return { ...SELECTABLE_ENGINES[selectedModelId] };
+  }
+  return {};
+}
+
+/** Public view of the active engine: never includes secrets. */
+export function publicLlmConfigView() {
+  return {
+    modelId: activeLlmConfig.modelId,
+    provider: activeLlmConfig.provider,
+    baseUrl: activeLlmConfig.baseUrl,
+    temperature: activeLlmConfig.temperature,
+  };
 }
 
 export interface IModelExtractionResult {
@@ -68,7 +101,8 @@ export interface IModelExtractionResult {
 async function extractComplianceWithGemma(
   rawText: string, 
   referenceId: string, 
-  customConfig?: Partial<IOpenLlmConfig>
+  customConfig?: Partial<IOpenLlmConfig>,
+  allowCloudLlm = false
 ): Promise<IModelExtractionResult> {
   const config = { ...activeLlmConfig, ...(customConfig || {}) };
   const failoverLogs: string[] = [];
@@ -80,7 +114,7 @@ Output strictly a valid JSON object with NO markdown code fences and NO explanat
   "title": "Concise clean tender title",
   "referenceNumber": "Unique tender reference ID or use '${referenceId}'",
   "issuingDepartment": "Name of organ of state or state-owned enterprise",
-  "closingDate": "YYYY-MM-DD",
+  "closingDate": "YYYY-MM-DD exactly as stated, or null if the text states no closing date",
   "cidbGrading": "Extracted CIDB grading such as 7CE, 3GB, or null",
   "estimatedBudget": "Estimated amount in ZAR or Not Specified",
   "category": "Services: General | Financial and insurance activities | Supplies: General | Civil engineering | Information and communication | ICT & Technology | Security & Facilities",
@@ -94,7 +128,8 @@ Output strictly a valid JSON object with NO markdown code fences and NO explanat
     "subcontracting30Percent": false,
     "additionalDocuments": ["SBD 4", "SBD 6.1", "COIDA Good Standing", "CIDB Certificate"]
   },
-  "points": "80/20" or "90/10",
+Set each checklist boolean true ONLY when the tender text itself lists that item as a requirement; otherwise false. Never infer a statutory obligation that the text does not state.
+  "points": "80/20" or "90/10" exactly as stated in the text, or null if the text does not state the preference-point system,
   "technicalThreshold": 75
 }
 
@@ -111,7 +146,9 @@ ${rawText.slice(0, 10000)}`;
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {})
+          // No Authorization header here on purpose: local runners do not need
+          // one, and attaching the server's paid API key to an HTTP call would
+          // leak it wherever the endpoint points.
         },
         signal: controller.signal,
         body: JSON.stringify({
@@ -138,9 +175,15 @@ ${rawText.slice(0, 10000)}`;
     }
   };
 
-  // Helper to attempt Cloud Gemini
+  // Helper to attempt Cloud Gemini. The key comes from server env only, and
+  // the whole call is gated on allowCloudLlm: paid AI credits are spent only
+  // for signed-in tenants with an active subscription, in every mode.
   const attemptGemini = async (): Promise<any | null> => {
-    const apiKey = config.apiKey || process.env.GEMINI_API_KEY;
+    if (!allowCloudLlm) {
+      failoverLogs.push('[Policy] Cloud AI skipped: paid AI credits are used only for subscribed accounts.');
+      return null;
+    }
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return null;
     try {
       const ai = new GoogleGenAI({ apiKey });
@@ -239,7 +282,7 @@ ${rawText.slice(0, 10000)}`;
       };
     }
 
-    failoverLogs.push(`⚠️ [Auto-Failover] Local models offline. Engaging South African Statutory Compliance Engine (POPIA Sandboxed)...`);
+    failoverLogs.push(`⚠️ [Auto-Failover] Local models offline. Engaging rule-based statutory compliance engine (offline)...`);
   }
 
   // Deterministic South African Statutory Parsing Engine
@@ -255,23 +298,41 @@ ${rawText.slice(0, 10000)}`;
   const cidbMatch = rawText.match(/\b([1-9][A-Z]{2}(?:\s*PE)?)\b/i);
   const cidbGrading = cidbMatch ? cidbMatch[1].toUpperCase() : undefined;
 
-  // Points system detection
-  let points: '80/20' | '90/10' = '80/20';
+  // Points system detection: set only when the tender text states it.
+  // Unknown must never silently become 80/20 - the bidder confirms the
+  // system from the tender document.
+  let points: '80/20' | '90/10' | undefined;
   if (/90\/10|90\s*\/\s*10|FIFTY MILLION|R50,?000,?000/i.test(rawText)) {
     points = '90/10';
+  } else if (/80\/20|80\s*\/\s*20/i.test(rawText)) {
+    points = '80/20';
   }
 
-  // Reference extraction
+  // Reference extraction: require an explicit separator before the token and
+  // at least one digit in it, so narrative words are never captured as a ref.
   let extractedRef = referenceId;
-  const refMatch = rawText.match(/(?:BID\s*(?:NO|NUMBER)|TENDER\s*(?:NO|NOTICE|NUMBER)|REF(?:\s*NO)?)\s*[:.-]?\s*([A-Z0-9\/\-_.]{4,35})/i);
-  if (refMatch && refMatch[1]) {
-    extractedRef = refMatch[1].trim();
+  // Capture stops at the first hard boundary: sentence end ('. ' + capital),
+  // a run of spaces, or end of line - so trailing prose is never swallowed,
+  // while multiword refs (SANRAL N.001-140-2026/1) keep their internal spaces.
+  // Case boundaries matter (lowercase prose vs uppercase ref tokens), so the
+  // keyword is matched case-insensitively first, then the capture runs
+  // case-sensitively on the remainder.
+  const refHead = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*/i);
+  if (refHead) {
+    const rest = rawText.slice(refHead.index! + refHead[0].length);
+    const cap = rest.match(/^(.{4,45}?)(?=\.\s+[A-Z]|\s+[a-z]|\s+[A-Z][a-zA-Z ]{0,25}:\s|\s{2,}|\n|$)/);
+    if (cap && cap[1]) {
+      const candidate = cap[1].trim().replace(/[.,;:]+$/, '');
+      if (/\d/.test(candidate) && candidate.length >= 4) extractedRef = candidate;
+    }
   }
 
   // Title extraction
   const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
   let title = lines.find(l => /SUPPLY|PROVISION|MAINTENANCE|REHABILITATION|APPOINTMENT|SERVICES/i.test(l)) || lines[0] || 'South African Public Sector RFP';
-  title = title.replace(/^(?:BID|TENDER|NOTICE|DESCRIPTION)\s*[:.-]?\s*/i, '').slice(0, 140);
+  title = title.replace(/^(?:BID|TENDER|NOTICE|DESCRIPTION)\s*[:.-]?\s*/i, '')
+    .replace(/\s*(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-].*$/i, '')
+    .trim().slice(0, 140);
 
   // Department extraction
   let department = 'Organ of State / Public Entity (South Africa)';
@@ -291,9 +352,29 @@ ${rawText.slice(0, 10000)}`;
   else if (/KWAZULU|DURBAN|ETHEKWINI/i.test(rawText)) province = 'KwaZulu-Natal';
   else if (/EASTERN CAPE|GQEBERHA/i.test(rawText)) province = 'Eastern Cape';
 
-  // Category
-  let category = 'ICT & Technology';
+  // Closing date: only an explicit date in the text; otherwise null.
+  // Supported: ISO (2026-12-15), '15 December 2026', DD/MM/YYYY or DD-MM-YYYY
+  // (South African day-first convention). Unparseable stays null.
+  let closingDate: string | null = null;
+  const MONTHS: Record<string, number> = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+  const closeCtx = rawText.match(/closing\s*(?:date)?\s*[:.-]?\s*(.{0,40})/i)?.[1] || '';
+  const iso = closeCtx.match(/(20\d{2})-(\d{2})-(\d{2})/);
+  const named = closeCtx.match(/(\d{1,2})\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s*(20\d{2})/i);
+  const numeric = closeCtx.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](20\d{2})/);
+  const mk = (y: number, m: number, d: number) => {
+    const dt = new Date(Date.UTC(y, m, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m && dt.getUTCDate() === d ? dt : null;
+  };
+  let parsed: Date | null = null;
+  if (iso) parsed = mk(+iso[1], +iso[2] - 1, +iso[3]);
+  else if (named) parsed = mk(+named[3], MONTHS[named[2].toLowerCase()], +named[1]);
+  else if (numeric) parsed = mk(+numeric[3], +numeric[2] - 1, +numeric[1]);
+  if (parsed) closingDate = parsed.toISOString().split('T')[0];
+
+  // Category: keyword-derived, neutral default - never a hardcoded guess.
+  let category = 'General Services';
   if (cidbGrading || /CONSTRUCTION|ROAD|ASPHALT|CIVIL|BUILDING/i.test(rawText)) category = 'Civil & Construction';
+  else if (/CLEANING|HYGIENE|PEST CONTROL|GARDENING|LANDSCAPING|FACILITIES MANAGEMENT|CATERING/i.test(rawText)) category = 'Security & Facilities';
   else if (/SECURITY|GUARDING|ARMED|ACCESS CONTROL|PSIRA/i.test(rawText)) category = 'Security & Facilities';
   else if (/FLEET|VEHICLE|TELEMATICS|LOGISTICS/i.test(rawText)) category = 'Logistics & Fleet';
   else if (/HEALTHCARE|MEDICAL|CLINIC|HOSPITAL/i.test(rawText)) category = 'Medical & Healthcare';
@@ -304,9 +385,9 @@ ${rawText.slice(0, 10000)}`;
       title,
       referenceNumber: extractedRef,
       issuingDepartment: department,
-      closingDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      closingDate,
       cidbGrading: cidbGrading || null,
-      estimatedBudget: points === '90/10' ? 'R 55,000,000.00+ (ZAR)' : 'R 18,500,000.00 (ZAR)',
+      estimatedBudget: 'Not Specified',
       province,
       category,
       checklist: {
@@ -317,16 +398,18 @@ ${rawText.slice(0, 10000)}`;
         compulsoryBriefing: briefingMatch,
         subcontracting30Percent: subcontractMatch,
         additionalDocuments: [
-          'SBD 1: Invitation to Bid Document',
-          'SBD 4: Standard Bidding Declaration of Interest',
-          'SBD 6.1: Preference Points Claim Form under Preferential Procurement Regs 2022',
+          // Only documents the tender text itself calls for - the tender's own
+          // returnables list governs; nothing is asserted from general rules.
+          ...(/\bSBD\s*1\b/i.test(rawText) ? ['SBD 1: Invitation to Bid Document'] : []),
+          ...(/\bSBD\s*4\b/i.test(rawText) ? ['SBD 4: Standard Bidding Declaration of Interest'] : []),
+          ...(/\bSBD\s*6\.1\b/i.test(rawText) ? ['SBD 6.1: Preference Points Claim Form under Preferential Procurement Regs 2022'] : []),
           ...(cidbGrading ? [`CIDB Proof of Registration with Active Grading ${cidbGrading}`] : []),
           ...(coidaMatch ? ['COIDA Valid Letter of Good Standing (Compensation Commissioner / FEM)'] : []),
-          'Certified Copy of CIPC Company Registration Documents',
-          'Certified Identity Documents of all active Directors/Members'
+          ...(/\bCIPC\b/i.test(rawText) ? ['Certified Copy of CIPC Company Registration Documents'] : []),
+          ...(/identity documents|certified id/i.test(rawText) ? ['Certified Identity Documents of Directors/Members as stated'] : [])
         ]
       },
-      points,
+      points: points || null,
       technicalThreshold: 70
     },
     modelUsed: 'Statutory Procurement Heuristics Engine (Offline Safe)',
@@ -345,7 +428,8 @@ export async function executeRfpPipeline({
   rawText,
   referenceId,
   companyProfile,
-  llmConfig
+  llmConfig,
+  allowCloudLlm = false
 }: ParseExecutionPayload): Promise<PipelineExecutionResult> {
   const startTime = Date.now();
   const traceLogs: string[] = [];
@@ -402,13 +486,13 @@ export async function executeRfpPipeline({
   }
 
   // POPIA Sandboxing Step
-  addTrace(`[POPIA Sandbox] Enforcing Protection of Personal Information Act boundary. Redacting bank identifiers & masking raw PII...`);
+  addTrace(`[Privacy] Applying PII redaction before AI processing (ID-number and card-like digit sequences; see docs/FOUNDATION.md for limits).`);
   const popiaSpan = createSpan('POPIA Data Sanitization & Compliance Verification', 'popia.sanitize', 'Scrub sensitive SME data');
   // Clean workingText for security
   const sanitizedText = workingText.replace(/\b(?:\d[ -]*?){13,16}\b/g, '[CONFIDENTIAL_POPIA_REDACTED]');
   await new Promise(r => setTimeout(r, 60));
   finalizeSpan(popiaSpan, 'success', { bytesSanitized: workingText.length, popiaStandard: 'Act 4 of 2013' });
-  addTrace(`[POPIA Sandbox] Ingestion pipeline isolated in POPIA Sandboxed Container Mode.`);
+  addTrace(`[Privacy] A short excerpt of this document is kept with the analysis record. Automatic redaction covers SA ID-number and card-like digit sequences only.`);
 
   // Gemma 2 / Llama 3.1 8B LLM Extraction Step
   addTrace(`[Mastra Engine] Booting localized agent context using active LLM (${activeLlmConfig.modelId})...`);
@@ -418,7 +502,7 @@ export async function executeRfpPipeline({
   let extractedData: any;
   let modelUsedName = activeLlmConfig.modelId;
   try {
-    const extractionResult = await extractComplianceWithGemma(sanitizedText, activeRefId, llmConfig);
+    const extractionResult = await extractComplianceWithGemma(sanitizedText, activeRefId, llmConfig, allowCloudLlm);
     extractedData = extractionResult.parsed;
     modelUsedName = extractionResult.modelUsed;
     if (extractionResult.failoverLogs?.length) {
@@ -441,12 +525,12 @@ export async function executeRfpPipeline({
 
   // Statutory Compliance Check Step
   const complianceSpan = createSpan('South African Regulatory Checklist Evaluation', 'compliance.evaluate', 'Validating CSD, SARS, B-BBEE, CIDB, COIDA');
-  addTrace(`[Compliance Engine] Verifying mandatory returnables: CSD (${extractedData.checklist?.csd ? 'Mandatory' : 'Optional'}), SARS PIN (${extractedData.checklist?.sars ? 'Mandatory' : 'Optional'}), B-BBEE (${extractedData.checklist?.bbbee ? 'Mandatory' : 'Optional'}), CIDB (${extractedData.cidbGrading || 'N/A'}).`);
+  addTrace(`[Compliance Engine] Returnables found in the tender text: CSD (${extractedData.checklist?.csd ? 'listed' : 'not found in text'}), SARS PIN (${extractedData.checklist?.sars ? 'listed' : 'not found in text'}), B-BBEE (${extractedData.checklist?.bbbee ? 'listed' : 'not found in text'}), CIDB (${extractedData.cidbGrading || 'not found in text'}). Confirm against the tender's own returnables list.`);
   await new Promise(r => setTimeout(r, 40));
   finalizeSpan(complianceSpan, 'success', {
-    csdRequired: extractedData.checklist?.csd ?? true,
-    sarsRequired: extractedData.checklist?.sars ?? true,
-    bbbeeRequired: extractedData.checklist?.bbbee ?? true,
+    csdRequired: extractedData.checklist?.csd ?? false,
+    sarsRequired: extractedData.checklist?.sars ?? false,
+    bbbeeRequired: extractedData.checklist?.bbbee ?? false,
     cidbGrading: extractedData.cidbGrading || null
   });
 
@@ -459,25 +543,26 @@ export async function executeRfpPipeline({
     title: extractedData.title || 'South African Public Sector RFP',
     referenceNumber: extractedData.referenceNumber || referenceId,
     issuingDepartment: extractedData.issuingDepartment || 'Organ of State',
-    closingDate: new Date(extractedData.closingDate || Date.now() + 21 * 24 * 60 * 60 * 1000),
+    ...(extractedData.closingDate && !isNaN(Date.parse(extractedData.closingDate))
+      ? { closingDate: new Date(extractedData.closingDate) } : {}),
     cidbGradingRequired: extractedData.cidbGrading,
-    estimatedBudget: extractedData.estimatedBudget || 'R 15,000,000.00 (ZAR)',
+    estimatedBudget: extractedData.estimatedBudget || 'Not Specified',
     province: extractedData.province || 'National / South Africa',
     category: extractedData.category || 'ICT & Technology',
     extractedComplianceChecklist: {
-      csdRequired: extractedData.checklist?.csd ?? true,
-      sarsPinRequired: extractedData.checklist?.sars ?? true,
-      bbbeeRequired: extractedData.checklist?.bbbee ?? true,
+      csdRequired: extractedData.checklist?.csd ?? false,
+      sarsPinRequired: extractedData.checklist?.sars ?? false,
+      bbbeeRequired: extractedData.checklist?.bbbee ?? false,
       coidaRequired: extractedData.checklist?.coida ?? false,
       compulsoryBriefing: extractedData.checklist?.compulsoryBriefing ?? false,
       subcontracting30Percent: extractedData.checklist?.subcontracting30Percent ?? false,
       additionalDocuments: extractedData.checklist?.additionalDocuments || []
     },
     evaluationCriteria: {
-      preferencePointsSystem: extractedData.points || '80/20',
+      preferencePointsSystem: extractedData.points === '80/20' || extractedData.points === '90/10' ? extractedData.points : 'unknown',
       technicalThresholdPercentage: extractedData.technicalThreshold || 70,
-      priceWeight: extractedData.points === '90/10' ? 90 : 80,
-      specificGoalsWeight: extractedData.points === '90/10' ? 10 : 20
+      ...(extractedData.points === '90/10' ? { priceWeight: 90, specificGoalsWeight: 10 }
+        : extractedData.points === '80/20' ? { priceWeight: 80, specificGoalsWeight: 20 } : {})
     },
     rawTextExcerpt: sanitizedText.slice(0, 2000),
     createdAt: new Date()
@@ -511,7 +596,7 @@ export async function executeRfpPipeline({
   finalizeSpan(rootSpan, 'success', {
     totalDurationMs: Date.now() - startTime,
     referenceNumber: savedRecord.referenceNumber,
-    complianceScore: '100% Parsed'
+    complianceScore: "Extraction complete - confirm requirements against the tender\u2019s own returnables list"
   });
   addTrace(`[Sentry Trace] Finalizing transaction loop. Generated structured bid skeleton (.docx ready). Total execution latency: ${Date.now() - startTime}ms.`);
 
