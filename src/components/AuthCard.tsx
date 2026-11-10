@@ -79,7 +79,7 @@ export const AuthCard: React.FC<Props> = ({ onAuthChange, initialMode = 'login' 
         {mode === 'signup' && (
           <div>
             <label className={label}>Company name</label>
-            <input className={input} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Apex Strategic Solutions (Pty) Ltd" />
+            <input className={input} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Your Company (Pty) Ltd" />
           </div>
         )}
         <div>

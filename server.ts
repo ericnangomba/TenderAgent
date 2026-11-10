@@ -9,6 +9,7 @@ import { fetchSouthAfricanTenders } from './src/lib/services/serpDiscovery';
 import { extractTextFromPdf, isRawPdfString, parseRawPdfString } from './src/lib/services/documentParser';
 import { detectLocalModels } from './src/lib/services/localModelDetector';
 import { SAMPLE_TENDERS } from './src/lib/data/sampleTenders';
+import { registerTenderFeedRoutes } from './src/lib/server/tenderFeed';
 import { IUserProfile, IPlatformModel, IFineTuningDataset, IFineTuningJob } from './src/lib/types/tender';
 
 dotenv.config();
@@ -356,66 +357,9 @@ app.get('/api/scrape', async (req: Request, res: Response) => {
   }
 });
 
-// Live Sync with etenders.gov.za portal
-app.post('/api/etenders/sync', async (req: Request, res: Response) => {
-  try {
-    const allowSerpApi = await foundation.serpApiAccess(req);
-    const result = await fetchSouthAfricanTenders(undefined, 'Western Cape', { allowSerpApi });
-    if (!result.serpApiConsumed) await foundation.releaseConsumption(req, 'serpapi');
-
-    // Register discovered items into in-memory store
-    result.leads.forEach(l => {
-      if (!inMemoryTenderStore.has(l.referenceNumber)) {
-        inMemoryTenderStore.set(l.referenceNumber, {
-          tenantId: req.auth ? req.auth.tenantId : undefined,
-          title: l.title,
-          referenceNumber: l.referenceNumber,
-          issuingDepartment: l.department,
-          closingDate: l.closingDate,
-          province: l.province,
-          category: l.category,
-          cidbGradingRequired: l.cidbGrading,
-          estimatedBudget: l.budgetEst,
-          rawTextExcerpt: l.rawSampleText || l.snippet,
-          extractedComplianceChecklist: {
-            csdRequired: l.csdMandatory,
-            sarsPinRequired: true,
-            bbbeeRequired: true,
-            coidaRequired: Boolean(l.cidbGrading),
-            additionalDocuments: ['SBD 1', 'SBD 4', 'SBD 6.1']
-          },
-          evaluationCriteria: {
-            preferencePointsSystem: '80/20',
-            technicalThresholdPercentage: 70
-          },
-          createdAt: new Date()
-        });
-      }
-    });
-
-    res.json({
-      success: true,
-      syncedCount: result.syncedCount,
-      westernCapeCount: result.leads.filter(l => l.province.includes('Western Cape')).length,
-      source: result.source,
-      isLiveEtendersPortal: result.isLiveEtendersPortal,
-      timestamp: new Date().toISOString()
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-// Tender List
-app.get('/api/tenders', (req: Request, res: Response) => {
-  let tenders = Array.from(inMemoryTenderStore.values());
-  // Untagged records are the shared public feed; tagged records belong to one
-  // tenant only. Anonymous callers must NEVER receive tenant-tagged items.
-  tenders = req.auth
-    ? tenders.filter((t: any) => !t.tenantId || t.tenantId === req.auth!.tenantId)
-    : tenders.filter((t: any) => !t.tenantId);
-  res.json({ success: true, count: tenders.length, tenders });
-});
+// Tender feed (sync + tenant-aware listing) - shared implementation with the
+// test harness so route security is exercised against the real handlers.
+registerTenderFeedRoutes(app, { foundation, store: inMemoryTenderStore });
 
 // Models Registry & Switcher
 app.get('/api/models', (req: Request, res: Response) => {
@@ -489,13 +433,12 @@ app.post('/api/models/active', foundation.requireAdmin, async (req: Request, res
 });
 
 // POPIA Profile Get & Update
-app.get('/api/profile', async (req: Request, res: Response) => {
-  if (req.auth) {
-    const stored = await foundation.repos.profiles.get(req.auth.tenantId);
-    res.json({ success: true, profile: stored ? stored.profile : {} });
-    return;
-  }
-  res.json({ success: true, profile: userSmeProfile });
+// Session required in EVERY mode: no company profile - not even the demo
+// sample - is served over the API to anonymous callers. The signed-out demo
+// never reads this endpoint (its sample lives client-side in the analyzer).
+app.get('/api/profile', foundation.requireAuth, async (req: Request, res: Response) => {
+  const stored = await foundation.repos.profiles.get(req.auth!.tenantId);
+  res.json({ success: true, profile: stored ? stored.profile : {} });
 });
 
 // Saving a profile requires an account in EVERY mode: the signed-out demo

@@ -7,6 +7,8 @@ import { loadConfig, type FoundationConfig } from '../src/lib/server/config';
 import { createMemoryRepos } from '../src/lib/server/repos/memory';
 import { MockBillingProvider } from '../src/lib/server/billing';
 import { fetchSouthAfricanTenders } from '../src/lib/services/serpDiscovery';
+import { registerTenderFeedRoutes } from '../src/lib/server/tenderFeed';
+import { SAMPLE_TENDERS } from '../src/lib/data/sampleTenders';
 
 export const TEST_SECRET = 'test-webhook-secret';
 
@@ -19,6 +21,7 @@ export interface TestApp {
   foundation: Foundation;
   server: Server;
   baseUrl: string;
+  tenderStore: Map<string, any>;
 }
 
 export async function startTestApp(configOverrides: Partial<FoundationConfig> = {}): Promise<TestApp> {
@@ -45,11 +48,22 @@ export async function startTestApp(configOverrides: Partial<FoundationConfig> = 
   });
   app.post('/api/parse-document', (_req, res) => res.json({ success: true, stub: 'parse' }));
 
+  // /api/profile exactly as server.ts serves it: requireAuth + per-tenant read.
+  app.get('/api/profile', foundation.requireAuth, async (req, res) => {
+    const stored = await foundation.repos.profiles.get((req as any).auth.tenantId);
+    res.json({ success: true, profile: stored ? stored.profile : {} });
+  });
+
+  // Real tender-feed routes on a per-app store seeded exactly like server.ts.
+  const tenderStore = new Map<string, any>();
+  SAMPLE_TENDERS.forEach((t: any) => tenderStore.set(t.referenceNumber, t));
+  registerTenderFeedRoutes(app, { foundation, store: tenderStore });
+
   const server = await new Promise<Server>((resolve) => {
     const s = app.listen(0, '127.0.0.1', () => resolve(s));
   });
   const { port } = server.address() as AddressInfo;
-  return { app, foundation, server, baseUrl: `http://127.0.0.1:${port}` };
+  return { app, foundation, server, baseUrl: `http://127.0.0.1:${port}`, tenderStore };
 }
 
 export function stopTestApp(t: TestApp): Promise<void> {
