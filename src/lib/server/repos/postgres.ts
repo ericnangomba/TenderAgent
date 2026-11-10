@@ -108,9 +108,14 @@ export async function connectPostgres(uri: string): Promise<Pool> {
   // escape hatch for a local dev database without TLS; never set it for a
   // networked database.
   const ssl = process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: true };
-  const pool = new Pool({ connectionString: uri, max: 5, ssl });
-  await ensurePostgresSchema(pool);
-  return pool;
+  const pool = new Pool({ connectionString: uri, max: 5, ssl, connectionTimeoutMillis: 15000 });
+  try {
+    await ensurePostgresSchema(pool);
+    return pool;
+  } catch {
+    try { await pool.end(); } catch { /* preserve the sanitized error */ }
+    throw new Error('Postgres initialization failed. Check database connectivity and schema permissions privately.');
+  }
 }
 
 const USAGE_COLUMN: Record<'analyses' | 'serpapiLookups', string> = {
@@ -325,6 +330,9 @@ export function createPostgresRepos(pool: PoolLike): FoundationRepos {
           [p.tenantId, JSON.stringify(p.profile), p.updatedAt],
         );
       },
+      async delete(tenantId: string) {
+        await pool.query('DELETE FROM foundation_profiles WHERE tenant_id = $1', [tenantId]);
+      },
     },
     applications: {
       async create(a: BidApplication) {
@@ -347,6 +355,9 @@ export function createPostgresRepos(pool: PoolLike): FoundationRepos {
           [tenantId],
         );
         return rows.map(toApplication);
+      },
+      async delete(tenantId: string, id: string) {
+        await pool.query('DELETE FROM foundation_applications WHERE tenant_id = $1 AND id = $2', [tenantId, id]);
       },
       async put(a: BidApplication) {
         await pool.query(

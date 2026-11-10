@@ -216,6 +216,23 @@ export const BidReadiness: React.FC<Props> = ({ isDarkMode, signedIn, onOpenAcco
     );
   }
 
+  const removeApplication = async (id: string) => {
+    setError(null);
+    try {
+      const res = await fetch(`/api/applications/${id}`, { method: 'DELETE' });
+      const d = await res.json().catch(() => null);
+      if (!res.ok || !d?.success) {
+        setError(d?.error || `Could not delete draft (${res.status})`);
+        return;
+      }
+      setApplications((prev) => prev.filter((a) => a.id !== id));
+      setSelected(null);
+      setReadiness(null);
+    } catch {
+      setError('Could not reach the applications service.');
+    }
+  };
+
   // ---------- Detail view ----------
   if (selected) {
     const done = selected.requirements.filter(isResolved).length;
@@ -232,11 +249,19 @@ export const BidReadiness: React.FC<Props> = ({ isDarkMode, signedIn, onOpenAcco
               <h2 className={`font-semibold text-lg ${text}`}>{selected.title}</h2>
               <p className={`text-xs ${sub} font-mono`}>{selected.tenderRef}</p>
             </div>
-            <span className={`text-xs px-2 py-1 rounded-full ${selected.state === 'ready'
-              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
-              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
-              {selected.state === 'ready' ? 'Ready (checklist complete)' : 'Draft'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs px-2 py-1 rounded-full ${selected.state === 'ready'
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
+                {selected.state === 'ready' ? 'Ready (checklist complete)' : 'Draft'}
+              </span>
+              <button
+                onClick={() => { if (window.confirm('Delete this bid draft? This cannot be undone.')) removeApplication(selected.id); }}
+                className={`text-xs px-2 py-1 rounded-lg font-semibold ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-red-300' : 'bg-slate-100 text-slate-600 hover:text-red-600'}`}
+              >
+                Delete draft
+              </button>
+            </div>
           </div>
           <p className={`text-xs ${sub} mb-4`}>
             {done} of {selected.requirements.length} requirements resolved (satisfied with evidence or recorded not applicable).

@@ -161,12 +161,14 @@ export function createMongoRepos(): FoundationRepos {
     profiles: {
       async get(tenantId) { const d = await m.Profile.findById(tenantId).lean(); return d ? withKey<TenantProfile>(d, 'tenantId', tenantId) : null; },
       async put(p: TenantProfile) { await m.Profile.updateOne({ _id: p.tenantId }, { $set: { profile: p.profile, updatedAt: p.updatedAt } }, { upsert: true }); },
+      async delete(tenantId: string) { await m.Profile.deleteOne({ _id: tenantId }); },
     },
     applications: {
       async create(a: any) { await m.Application.create({ ...a, _id: `${a.tenantId}:${a.id}` }); },
       async getById(tenantId, id) { const d = await m.Application.findById(`${tenantId}:${id}`).lean(); return d ? strip<any>(d) : null; },
       async listByTenant(tenantId) { const docs = await m.Application.find({ tenantId }).lean(); return docs.map((d: any) => strip(d)); },
       async put(a: any) { await m.Application.updateOne({ _id: `${a.tenantId}:${a.id}` }, { $set: { ...a } }, { upsert: true }); },
+      async delete(tenantId: string, id: string) { await m.Application.deleteOne({ _id: `${tenantId}:${id}` }); },
     },
     stats: {
       async overview(periodKey: string) {

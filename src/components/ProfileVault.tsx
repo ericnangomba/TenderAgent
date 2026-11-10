@@ -1,3 +1,4 @@
+import { DOCUMENT_REDACTION_NOTICE } from '../lib/utils/privacyCopy';
 import React, { useState } from 'react';
 import {
   Building2, ShieldCheck, CheckCircle2, AlertCircle, Save, Lock,
@@ -181,12 +182,19 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
               {/* SARS TCS PIN & CIDB */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
+                  {userProfile.taxComplianceStatusPinUnavailable && (
+                    <p role="alert" className="text-xs text-amber-700 mb-2">
+                      Your saved PIN cannot be read with the current protection key. It is still saved.
+                      Ask the operator to restore the key. Other profile edits keep the saved PIN unchanged;
+                      entering a new PIN replaces it.
+                    </p>
+                  )}
                   <label className={`text-xs block mb-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                     SARS Tax Compliance (TCS) PIN:
                   </label>
                   <input
                     type="text"
-                    required
+                    required={!userProfile.taxComplianceStatusPinUnavailable}
                     placeholder="Your SARS TCS PIN"
                     value={formData.taxComplianceStatusPin}
                     onChange={(e) => handleChange('taxComplianceStatusPin', e.target.value)}
@@ -360,7 +368,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   <span>How your data is handled</span>
                 </div>
                 <p className="text-[11px] leading-relaxed">
-                  Your profile is stored with your account and used to generate bid skeletons. PII redaction before AI processing currently covers ID-number and card-like digit sequences only.
+                  Your profile is stored with your account and used to generate bid skeletons. {DOCUMENT_REDACTION_NOTICE}
                 </p>
               </div>
 

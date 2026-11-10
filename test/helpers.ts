@@ -9,6 +9,7 @@ import { MockBillingProvider } from '../src/lib/server/billing';
 import { fetchSouthAfricanTenders } from '../src/lib/services/serpDiscovery';
 import { registerTenderFeedRoutes } from '../src/lib/server/tenderFeed';
 import { SAMPLE_TENDERS } from '../src/lib/data/sampleTenders';
+import { encryptProfileFields, decryptProfileFields, profileForClient, prepareProfileSave } from '../src/lib/server/fieldCrypto';
 
 export const TEST_SECRET = 'test-webhook-secret';
 
@@ -49,10 +50,25 @@ app.use('/api', foundation.apiCacheHeaders);
   });
   app.post('/api/parse-document', (_req, res) => res.json({ success: true, stub: 'parse' }));
 
-  // /api/profile exactly as server.ts serves it: requireAuth + per-tenant read.
+  // /api/profile exactly as server.ts serves it: requireAuth, per-tenant read,
+  // field encryption on write, self-serve delete.
   app.get('/api/profile', foundation.requireAuth, async (req, res) => {
     const stored = await foundation.repos.profiles.get((req as any).auth.tenantId);
-    res.json({ success: true, profile: stored ? stored.profile : {} });
+    const profile = stored ? profileForClient(foundation.config.profileFieldKey, stored.profile) : {};
+    res.json({ success: true, profile });
+  });
+  app.post('/api/profile', foundation.requireAuth, async (req, res) => {
+    try {
+    const existing = await foundation.repos.profiles.get((req as any).auth.tenantId);
+    const key = foundation.config.profileFieldKey;
+    const saved = prepareProfileSave(key, existing?.profile || {}, req.body || {});
+    await foundation.repos.profiles.put({ tenantId: (req as any).auth.tenantId, profile: saved, updatedAt: new Date() });
+    res.json({ success: true, profile: profileForClient(key, saved) });
+    } catch (error: any) { res.status(400).json({ success: false, error: error.message }); }
+  });
+  app.delete('/api/profile', foundation.requireAuth, async (req, res) => {
+    await foundation.repos.profiles.delete((req as any).auth.tenantId);
+    res.json({ success: true });
   });
 
   // Real tender-feed routes on a per-app store seeded exactly like server.ts.

@@ -1,6 +1,8 @@
+import { DOCUMENT_REDACTION_NOTICE } from '../utils/privacyCopy';
 import * as Sentry from '@sentry/node';
 import { GoogleGenAI } from '@google/genai';
 import TenderModel, { ITender } from '../models/Tender';
+import { redactPii } from '../utils/redactPii';
 import { ISentrySpanRecord, IBidResponseSkeleton, IUserProfile, IOpenLlmConfig } from '../types/tender';
 import { generateBidResponseSkeleton } from '../utils/skeletonGenerator';
 import { isRawPdfString, parseRawPdfString } from '../services/documentParser';
@@ -486,13 +488,13 @@ export async function executeRfpPipeline({
   }
 
   // POPIA Sandboxing Step
-  addTrace(`[Privacy] Applying PII redaction before AI processing (ID-number and card-like digit sequences; see docs/FOUNDATION.md for limits).`);
-  const popiaSpan = createSpan('POPIA Data Sanitization & Compliance Verification', 'popia.sanitize', 'Scrub sensitive SME data');
+  addTrace(`[Privacy] ${DOCUMENT_REDACTION_NOTICE}`);
+  const popiaSpan = createSpan('Tender-text pattern redaction', 'popia.sanitize', 'Mask supported personal-data patterns in tender text');
   // Clean workingText for security
-  const sanitizedText = workingText.replace(/\b(?:\d[ -]*?){13,16}\b/g, '[CONFIDENTIAL_POPIA_REDACTED]');
+  const sanitizedText = redactPii(workingText);
   await new Promise(r => setTimeout(r, 60));
-  finalizeSpan(popiaSpan, 'success', { bytesSanitized: workingText.length, popiaStandard: 'Act 4 of 2013' });
-  addTrace(`[Privacy] A short excerpt of this document is kept with the analysis record. Automatic redaction covers SA ID-number and card-like digit sequences only.`);
+  finalizeSpan(popiaSpan, 'success', { bytesSanitized: workingText.length, scope: 'supported tender-text patterns only' });
+  addTrace(`[Privacy] A short excerpt of this document is kept with the analysis record. Pattern matching is limited; unrecognized personal details can remain.`);
 
   // Gemma 2 / Llama 3.1 8B LLM Extraction Step
   addTrace(`[Mastra Engine] Booting localized agent context using active LLM (${activeLlmConfig.modelId})...`);

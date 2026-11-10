@@ -1,3 +1,4 @@
+import { DOCUMENT_REDACTION_NOTICE } from './src/lib/utils/privacyCopy';
 import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
@@ -5,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { executeRfpPipeline, inMemoryTenderStore, activeLlmConfig, resolveServerLlmConfig, publicLlmConfigView } from './src/lib/agents/mastraEngine';
+import { encryptProfileFields, decryptProfileFields, fieldEncryptionEnabled, profileForClient, prepareProfileSave } from './src/lib/server/fieldCrypto';
 import { fetchSouthAfricanTenders } from './src/lib/services/serpDiscovery';
 import { extractTextFromPdf, isRawPdfString, parseRawPdfString } from './src/lib/services/documentParser';
 import { detectLocalModels } from './src/lib/services/localModelDetector';
@@ -280,8 +282,9 @@ app.get('/api/health', (req: Request, res: Response) => {
     localModelCheck: 'on-demand via /api/models/detect',
     sentryTracing: Boolean(process.env.SENTRY_DSN),
     authRequired: foundation.config.authRequired,
+    profileFieldEncryption: fieldEncryptionEnabled(foundation.config.profileFieldKey) ? 'on' : 'off',
     store: foundation.config.store,
-    privacyNote: 'PII redaction before AI processing currently covers ID-number and card-like digit sequences only.',
+    privacyNote: DOCUMENT_REDACTION_NOTICE,
     sampleTendersLoaded: SAMPLE_TENDERS.length
   });
 });
@@ -437,7 +440,17 @@ app.post('/api/models/active', foundation.requireAdmin, async (req: Request, res
 // never reads this endpoint (its sample lives client-side in the analyzer).
 app.get('/api/profile', foundation.requireAuth, async (req: Request, res: Response) => {
   const stored = await foundation.repos.profiles.get(req.auth!.tenantId);
-  res.json({ success: true, profile: stored ? stored.profile : {} });
+  const profile = stored ? profileForClient(foundation.config.profileFieldKey, stored.profile) : {};
+  res.json({ success: true, profile });
+});
+
+// Self-serve erasure of the saved company profile. Immediate and total for
+// this tenant's profile row; account, sessions and bid drafts are separate
+// records with their own lifecycles (sessions die on logout, drafts are
+// deleted one by one from the Bid Readiness view).
+app.delete('/api/profile', foundation.requireAuth, async (req: Request, res: Response) => {
+  await foundation.repos.profiles.delete(req.auth!.tenantId);
+  res.json({ success: true, message: 'Saved company profile deleted.' });
 });
 
 // Saving a profile requires an account in EVERY mode: the signed-out demo
@@ -446,9 +459,10 @@ app.get('/api/profile', foundation.requireAuth, async (req: Request, res: Respon
 app.post('/api/profile', foundation.requireAuth, async (req: Request, res: Response) => {
   try {
     const existing = await foundation.repos.profiles.get(req.auth!.tenantId);
-    const merged = { ...(existing ? existing.profile : {}), ...req.body };
-    await foundation.repos.profiles.put({ tenantId: req.auth!.tenantId, profile: merged, updatedAt: new Date() });
-    res.json({ success: true, profile: merged, message: 'SME profile updated.' });
+    const key = foundation.config.profileFieldKey;
+    const saved = prepareProfileSave(key, existing?.profile || {}, req.body || {});
+    await foundation.repos.profiles.put({ tenantId: req.auth!.tenantId, profile: saved, updatedAt: new Date() });
+    res.json({ success: true, profile: profileForClient(key, saved) });
   } catch (error: any) {
     res.status(400).json({ success: false, error: error.message });
   }
@@ -478,6 +492,7 @@ app.post('/api/analyze', heavyOpLimiter, async (req: Request, res: Response) => 
     if (req.auth) {
       const stored = await foundation.repos.profiles.get(req.auth.tenantId);
       if (stored?.profile) {
+        stored.profile = decryptProfileFields(foundation.config.profileFieldKey, stored.profile);
         selectedModelId = typeof (stored.profile as any).llmModelId === 'string' ? (stored.profile as any).llmModelId : null;
         if (!companyProfile) profile = stored.profile;
       }

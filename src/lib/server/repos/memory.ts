@@ -84,6 +84,7 @@ export function createMemoryRepos(): FoundationRepos {
     profiles: {
       async get(tenantId) { const p = profiles.get(tenantId); return p ? clone(p) : null; },
       async put(p) { profiles.set(p.tenantId, clone(p)); },
+      async delete(tenantId) { profiles.delete(tenantId); },
     },
     applications: {
       async create(a) { applications.set(`${a.tenantId}:${a.id}`, clone(a)); },
@@ -92,6 +93,7 @@ export function createMemoryRepos(): FoundationRepos {
         return [...applications.values()].filter((a) => a.tenantId === tenantId).map(clone);
       },
       async put(a) { applications.set(`${a.tenantId}:${a.id}`, clone(a)); },
+      async delete(tenantId, id) { applications.delete(`${tenantId}:${id}`); },
     },
     stats: {
       async overview(periodKey) {

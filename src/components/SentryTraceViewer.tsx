@@ -27,12 +27,12 @@ export const SentryTraceViewer: React.FC<SentryTraceViewerProps> = ({
     },
     {
       id: 'span-popia-02',
-      name: 'POPIA Data Sanitization & Compliance Verification',
+      name: 'Tender-text pattern redaction',
       op: 'popia.sanitize',
       status: 'success',
       startTime: Date.now() - 1400,
       durationMs: 75,
-      description: 'Scrub sensitive bank accounts & PII per Act 4 of 2013'
+      description: 'Mask supported tender-text patterns only; other personal details may remain'
     },
     {
       id: 'span-gemma-03',
@@ -199,12 +199,11 @@ export async function GET() {
                 Sentry Agent Tracing & Architecture Inspector
               </h2>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800 font-semibold">
-                Span Telemetry Active
+                {recentSpans.length ? 'Latest run spans' : 'Illustrative sample, not a live run'}
               </span>
             </div>
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} leading-relaxed max-w-2xl`}>
-              Inspect transaction boundaries, custom agent spans, and asynchronous LLM orchestration
-              across the Mastra framework, Gemma 2 inference layer, and MongoDB Atlas persistence engine.
+              Inspect the latest analysis spans when available. The diagram and code below are illustrative, not evidence of the deployed engine, storage or privacy controls.
             </p>
           </div>
 
@@ -222,7 +221,7 @@ export async function GET() {
       <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6`}>
         <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
           <Layers className="w-4 h-4 text-emerald-600" />
-          <span>System Execution Topology & Transaction Boundaries</span>
+          <span>Illustrative pipeline diagram, not deployment status</span>
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3 font-mono text-xs">
@@ -235,8 +234,8 @@ export async function GET() {
               <span>01. INGESTION</span>
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
             </div>
-            <div className={`font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>POPIA Sandbox</div>
-            <div className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Pii scrubbing & redaction per Act 4 of 2013</div>
+            <div className={`font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>Tender-text redaction</div>
+            <div className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Limited pattern matching, not a compliance check</div>
           </div>
 
           {/* Stage 2 */}
@@ -295,7 +294,7 @@ export async function GET() {
         <div className="flex items-center justify-between mb-4">
           <h3 className={`text-sm font-semibold flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             <Terminal className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-            <span>Active Sentry Transaction Spans</span>
+            <span>{recentSpans.length ? 'Latest analysis spans' : 'Sample spans, no analysis has run'}</span>
           </h3>
           <span className={`text-xs font-mono ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Traces Sample Rate: 1.0</span>
         </div>
@@ -340,7 +339,7 @@ export async function GET() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
             <Code className="w-4 h-4 text-emerald-600" />
-            <h3 className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Implementation Architecture Code</h3>
+            <h3 className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Illustrative code, not the deployed source</h3>
           </div>
 
           <div className="flex items-center gap-2">

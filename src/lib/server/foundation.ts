@@ -421,6 +421,18 @@ function applyReadyInvariant(app: BidApplication): void {
     res.json({ success: true, application: app, readiness: evaluateReadiness(app) });
   });
 
+  // Self-serve erasure of one bid draft. Tenant-scoped: another account's
+  // draft id is indistinguishable from a missing one.
+  applicationsRouter.delete('/:id', async (req: Request, res: Response) => {
+    const app = await repos.applications.getById(req.auth!.tenantId, req.params.id);
+    if (!app) {
+      res.status(404).json({ success: false, error: 'not_found' });
+      return;
+    }
+    await repos.applications.delete(req.auth!.tenantId, req.params.id);
+    res.json({ success: true, message: 'Bid draft deleted.' });
+  });
+
   applicationsRouter.post('/:id/requirements', async (req: Request, res: Response) => {
     const app = await repos.applications.getById(req.auth!.tenantId, req.params.id);
     if (!app) {

@@ -127,12 +127,14 @@ export interface FoundationRepos {
   profiles: {
     get(tenantId: string): Promise<TenantProfile | null>;
     put(p: TenantProfile): Promise<void>;
+    delete(tenantId: string): Promise<void>;
   };
   applications: {
     create(a: BidApplication): Promise<void>;
     getById(tenantId: string, id: string): Promise<BidApplication | null>;
     listByTenant(tenantId: string): Promise<BidApplication[]>;
     put(a: BidApplication): Promise<void>;
+    delete(tenantId: string, id: string): Promise<void>;
   };
   /**
    * Aggregate-only operator statistics for the admin overview. Counts and

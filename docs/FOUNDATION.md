@@ -132,5 +132,8 @@ starting with the SME friend's walkthrough of which steps take him four days.
 
 ### Known limits (documented, not claimed as complete)
 - PII redaction before AI processing covers 13-16 digit sequences (SA ID numbers and
-  card-like numbers) only. Names, phone numbers and addresses are NOT yet masked.
+  card-like numbers), email addresses, SA phone numbers (contiguous, space-separated
+  or +27 form; dash-separated local forms are deliberately not matched because tender
+  references look identical) and SA VAT numbers. Names, physical addresses and other
+  personal details are NOT masked.
 - In demo mode (AUTH_REQUIRED unset) analysis is free; paid external calls stay gated.

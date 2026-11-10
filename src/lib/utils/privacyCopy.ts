@@ -1,0 +1,2 @@
+/** Shared, deliberately limited description of document-text pattern matching. */
+export const DOCUMENT_REDACTION_NOTICE = 'Tender-text redaction matches 13-16 digit ID/card-like runs, email addresses, SA phone numbers in contiguous, spaced or +27 forms, and VAT-like numbers. Dash-separated local phones, names, physical addresses and other personal details can still pass through. This is not a guarantee that a document is safe to share with cloud AI.';

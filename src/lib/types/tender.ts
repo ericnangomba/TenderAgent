@@ -58,6 +58,8 @@ export interface IUserProfile {
   registrationNumber: string;
   csdNumber: string; // MAAAxxxxxxx
   taxComplianceStatusPin: string;
+  /** API-only status, never stored as profile content. */
+  taxComplianceStatusPinUnavailable?: boolean;
   bbbeeLevel: number; // 1 to 8
   bbbeeType: 'EME' | 'QSE' | 'Generic';
   cidbGrading: string; // e.g. "7GB PE" or "1CE"

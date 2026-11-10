@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LogOut, ShieldCheck, Building2, AlertCircle, CheckCircle2, KeyRound } from 'lucide-react';
+import { LogOut, ShieldCheck, Building2, AlertCircle, CheckCircle2, KeyRound, Trash2 } from 'lucide-react';
 import type { AuthState } from './AuthCard';
 
 interface AccountProps {
@@ -21,6 +21,7 @@ interface AccountInfo {
 export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange }) => {
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [profileDelete, setProfileDelete] = useState<'idle' | 'confirm' | 'busy' | 'done' | 'error'>('idle');
 
   React.useEffect(() => {
     if (!auth) {
@@ -66,6 +67,22 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
     }
     onAuthChange(null);
     window.location.reload();
+  };
+
+  const deleteProfile = async () => {
+    setProfileDelete('busy');
+    try {
+      const res = await fetch('/api/profile', { method: 'DELETE' });
+      if (!res.ok) {
+        setProfileDelete('error');
+        return;
+      }
+      setProfileDelete('done');
+      // Reload so no view keeps showing the erased profile from memory.
+      setTimeout(() => window.location.reload(), 1200);
+    } catch {
+      setProfileDelete('error');
+    }
   };
 
   if (!auth) return null;
@@ -149,6 +166,58 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
                 <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Live tender lookups</div>
               </div>
             </div>
+          </div>
+        )}
+      </div>
+
+      <div className={card}>
+        <div className="flex items-center gap-2.5 mb-4">
+          <Trash2 className={`w-5 h-5 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
+          <h3 className={`text-sm font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Your data</h3>
+        </div>
+        <p className={`text-xs leading-relaxed mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Your company profile and bid drafts stay saved until you delete them - there is no automatic expiry.
+          Tender analyses and pasted tender text run in server memory while the service runs and disappear when the
+          service restarts. Evidence notes you add to a requirement stay saved with that draft until you delete the
+          draft. Bid drafts can be deleted one by one from the Bid Readiness view.
+        </p>
+        {profileDelete === 'done' ? (
+          <p className={`text-xs font-medium ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>
+            Saved company profile deleted.
+          </p>
+        ) : profileDelete === 'confirm' || profileDelete === 'busy' ? (
+          <div className={`rounded-xl p-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
+            <p className={`text-xs mb-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+              Delete your saved company profile now? This cannot be undone. Your account and sign-in stay active.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={deleteProfile}
+                disabled={profileDelete === 'busy'}
+                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-xs font-semibold"
+              >
+                {profileDelete === 'busy' ? 'Deleting...' : 'Yes, delete my profile'}
+              </button>
+              <button
+                onClick={() => setProfileDelete('idle')}
+                disabled={profileDelete === 'busy'}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700'}`}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setProfileDelete('confirm')}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
+            >
+              Delete saved company profile
+            </button>
+            {profileDelete === 'error' && (
+              <span className={`text-xs ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>Delete failed - please try again.</span>
+            )}
           </div>
         )}
       </div>
