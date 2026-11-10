@@ -314,10 +314,17 @@ ${rawText.slice(0, 10000)}`;
   // Capture stops at the first hard boundary: sentence end ('. ' + capital),
   // a run of spaces, or end of line - so trailing prose is never swallowed,
   // while multiword refs (SANRAL N.001-140-2026/1) keep their internal spaces.
-  const refMatch = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*(.{4,45}?)(?=\.\s+[A-Z]|\s{2,}|\n|$)/i);
-  if (refMatch && refMatch[1]) {
-    const candidate = refMatch[1].trim().replace(/[.,;:]+$/, '');
-    if (/\d/.test(candidate) && candidate.length >= 4) extractedRef = candidate;
+  // Case boundaries matter (lowercase prose vs uppercase ref tokens), so the
+  // keyword is matched case-insensitively first, then the capture runs
+  // case-sensitively on the remainder.
+  const refHead = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*/i);
+  if (refHead) {
+    const rest = rawText.slice(refHead.index! + refHead[0].length);
+    const cap = rest.match(/^(.{4,45}?)(?=\.\s+[A-Z]|\s+[a-z]|\s+[A-Z][a-zA-Z ]{0,25}:\s|\s{2,}|\n|$)/);
+    if (cap && cap[1]) {
+      const candidate = cap[1].trim().replace(/[.,;:]+$/, '');
+      if (/\d/.test(candidate) && candidate.length >= 4) extractedRef = candidate;
+    }
   }
 
   // Title extraction
@@ -485,7 +492,7 @@ export async function executeRfpPipeline({
   const sanitizedText = workingText.replace(/\b(?:\d[ -]*?){13,16}\b/g, '[CONFIDENTIAL_POPIA_REDACTED]');
   await new Promise(r => setTimeout(r, 60));
   finalizeSpan(popiaSpan, 'success', { bytesSanitized: workingText.length, popiaStandard: 'Act 4 of 2013' });
-  addTrace(`[Privacy] Ingestion pipeline processes this document for the current session only.`);
+  addTrace(`[Privacy] A short excerpt of this document is kept with the analysis record. Automatic redaction covers SA ID-number and card-like digit sequences only.`);
 
   // Gemma 2 / Llama 3.1 8B LLM Extraction Step
   addTrace(`[Mastra Engine] Booting localized agent context using active LLM (${activeLlmConfig.modelId})...`);

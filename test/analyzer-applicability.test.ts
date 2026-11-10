@@ -154,3 +154,31 @@ test('reference: trailing prose on the same line is never swallowed', async () =
   });
   assert.equal(singleLine.record.referenceNumber, 'CLN-2026-014');
 });
+
+test('reference: field labels and purpose prose stop the capture', async () => {
+  const fieldRun = await executeRfpPipeline({
+    rawText: 'BID NUMBER: RDM-2026-088 Closing date: 15 December 2026. Provision of services.',
+    referenceId: 'T17', llmConfig: STATUTORY,
+  });
+  assert.equal(fieldRun.record.referenceNumber, 'RDM-2026-088');
+  const purpose = await executeRfpPipeline({
+    rawText: 'TENDER REF: PRASA-2026-11-XT for cabling.',
+    referenceId: 'T18', llmConfig: STATUTORY,
+  });
+  assert.equal(purpose.record.referenceNumber, 'PRASA-2026-11-XT');
+  // SANRAL multiword must survive
+  const sanral = await executeRfpPipeline({
+    rawText: 'TENDER NUMBER: SANRAL N.001-140-2026/1\nRoad maintenance.',
+    referenceId: 'T19', llmConfig: STATUTORY,
+  });
+  assert.equal(sanral.record.referenceNumber, 'SANRAL N.001-140-2026/1');
+});
+
+test('no UI or trace claims session-only processing while an excerpt is stored', async () => {
+  const r = await executeRfpPipeline({ rawText: SILENT_TEXT, referenceId: 'T20', llmConfig: STATUTORY });
+  for (const log of r.traceLogs) {
+    assert.ok(!/current session only/i.test(log), `trace must not claim session-only: ${log}`);
+  }
+  const src = await import('node:fs').then(fs => fs.readFileSync('src/components/BidSkeletonModal.tsx', 'utf8'));
+  assert.ok(!/POPIA Protected|Session-only processing/i.test(src), 'no privacy assurance badges');
+});

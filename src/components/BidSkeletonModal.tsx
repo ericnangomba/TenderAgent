@@ -144,9 +144,8 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
                 <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Draft Bid Response Skeleton
                 </h3>
-                <span className="text-[10px] uppercase bg-slate-100 text-slate-600 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 px-1.5 py-0.5 rounded font-semibold"
-                  title="Documents are processed for the current session only. Automatic redaction covers SA ID-number and card-like digit sequences; other personal details in the document remain your responsibility.">
-                  Session-only processing
+                <span className="text-[10px] uppercase bg-slate-100 text-slate-600 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 px-1.5 py-0.5 rounded font-semibold">
+                  Draft
                 </span>
               </div>
               <p className={`text-xs truncate max-w-xl ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
