@@ -77,7 +77,7 @@ self.addEventListener('fetch', (event) => {
         return new Response(JSON.stringify({
           success: false,
           offline: true,
-          message: 'You are offline. Your account data is only available with a connection - nothing is stored on this device.'
+          message: 'You are offline. Your private account data needs a connection - it is never stored on this device.'
         }), {
           status: 503,
           headers: { 'Content-Type': 'application/json' }
