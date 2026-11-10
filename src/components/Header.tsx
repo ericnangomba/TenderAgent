@@ -1,7 +1,7 @@
 import React from 'react';
 import { Menu, ShieldCheck, Shield } from 'lucide-react';
 import { TabKey } from './Sidebar';
-import tenderAgentLogo from '../assets/tenderagentlogo.png';
+import tenderAgentLogo from '../assets/tenderagentlogo-trimmed.png';
 import { detectLocalModels } from '../lib/services/localModelDetector';
 
 interface HeaderProps {
@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
             <img
               src={tenderAgentLogo}
               alt="TenderAgent Logo"
-              className="h-6 w-auto object-contain max-w-[100px]"
+              className="h-10 w-auto object-contain"
               onError={(e) => {
                 if (e.currentTarget.src !== '/tenderagentlogo.png') {
                   e.currentTarget.src = '/tenderagentlogo.png';
@@ -118,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
             <span className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>/</span>
           </div>
-          <h1 className={`text-xs sm:text-sm font-semibold tracking-tight truncate max-w-[125px] xs:max-w-[170px] sm:max-w-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          <h1 className={`text-xs sm:text-sm font-semibold tracking-tight leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             {getTabLabel(activeTab)}
           </h1>
         </div>

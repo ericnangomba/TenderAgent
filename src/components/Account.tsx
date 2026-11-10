@@ -80,18 +80,18 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
     <div className="max-w-2xl mx-auto space-y-6">
       <div className={card}>
         <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50'}`}>
               <Building2 className={`w-5 h-5 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
             </div>
-            <div>
-              <h2 className={`text-lg font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>{auth.email}</h2>
+            <div className="min-w-0">
+              <h2 className={`text-lg font-bold break-all ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>{auth.email}</h2>
               <p className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Workspace {auth.tenantId.slice(0, 8)}</p>
             </div>
           </div>
           <button
             onClick={logout}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
+            className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
           >
             <LogOut className="w-3.5 h-3.5" /> Sign out
           </button>
