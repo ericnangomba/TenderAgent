@@ -1,6 +1,5 @@
 # 🇿🇦 TenderAgent
 
-> **Hacktoberfest 2026 Open-Source AI Challenge (Week 2: Side Hustle)**  
 > An automated, privacy-first compliance framework and bid-response skeleton generator built specifically for South African SMMEs navigating state and corporate procurement.
 
 ---
