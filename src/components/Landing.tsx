@@ -1,6 +1,6 @@
 import React from 'react';
 import { AuthCard, AuthState } from './AuthCard';
-import tenderAgentLogo from '../assets/tenderagentlogo.png';
+import tenderAgentLogo from '../assets/tenderagentlogo-trimmed.png';
 
 interface Props {
   onAuthChange: (auth: AuthState) => void;
@@ -8,17 +8,14 @@ interface Props {
 
 const features = [
   {
-    n: '01',
     title: 'RFP compliance audit',
-    body: 'Upload a tender document and get the mandatory returnables extracted - CSD registration, SARS TCS PIN, B-BBEE, CIDB and COIDA - with a checklist you can work from.',
+    body: 'Upload a tender document and get the returnables it asks for extracted - such as CSD registration, SARS TCS PIN, B-BBEE, CIDB or COIDA - with a checklist you can work from.',
   },
   {
-    n: '02',
     title: 'Bid response skeletons',
     body: 'Turn the requirements into a structured .docx response framework aligned to the tender, ready for your pricing and technical content.',
   },
   {
-    n: '03',
     title: 'Live tender feed & PPPFA math',
     body: 'Follow new South African tender notices and score opportunities with the 80/20 and 90/10 preference-point formulas built in.',
   },
@@ -35,9 +32,8 @@ export const Landing: React.FC<Props> = ({ onAuthChange }) => {
     <div className="min-h-screen pb-28 bg-[#FBFAF7] text-[#14201C] antialiased">
       {/* Top bar */}
       <header className="max-w-6xl mx-auto px-6 pt-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <img src={tenderAgentLogo} alt="TenderAgent" className="w-9 h-9 rounded-lg" />
-          <span className="font-display text-xl font-semibold tracking-tight">TenderAgent</span>
+        <div className="flex items-center">
+          <img src={tenderAgentLogo} alt="TenderAgent" className="h-16 sm:h-20 w-auto object-contain" />
         </div>
         <div className="flex items-center gap-4">
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 hidden sm:block">
@@ -82,8 +78,7 @@ export const Landing: React.FC<Props> = ({ onAuthChange }) => {
         <section className="order-3 lg:order-none w-full">
           <div className="lg:mt-10 border-t border-stone-200 pt-8">
             {features.map((f, i) => (
-              <div key={f.n} className={`grid sm:grid-cols-[3.5rem_1fr] gap-2 sm:gap-6 py-5 ${i > 0 ? 'border-t border-stone-200' : ''}`}>
-                <span className="font-display text-sm text-emerald-800 font-semibold pt-1">{f.n}</span>
+              <div key={f.title} className={`py-5 ${i > 0 ? 'border-t border-stone-200' : ''}`}>
                 <div>
                   <h3 className="font-display text-lg font-semibold">{f.title}</h3>
                   <p className="text-sm leading-relaxed text-stone-600 mt-1 max-w-lg">{f.body}</p>
