@@ -30,6 +30,37 @@ app.post('/api/analyze', (_req, res) => res.json({ success: true, stub: 'analyze
 app.get('/api/scrape', (_req, res) => res.json({ success: true, tenders: [], source: 'qa-stub' }));
 app.post('/api/parse-document', (_req, res) => res.json({ success: true, stub: 'parse' }));
 
+// Route parity with server.ts for honest QA pixels: health + per-tenant profile.
+app.get('/api/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    engine: 'TenderAgent RFP pipeline',
+    configuredModel: 'gemini-2.5-flash',
+    configuredProvider: 'google-genai',
+    geminiConfigured: false,
+    localModelCheck: 'on-demand via /api/models/detect',
+    sentryTracing: false,
+    authRequired: config.authRequired,
+    store: config.store,
+    privacyNote: 'PII redaction before AI processing currently covers ID-number and card-like digit sequences only.',
+    sampleTendersLoaded: 14
+  });
+});
+app.get('/api/profile', async (req, res) => {
+  if ((req as any).auth) {
+    const stored = await repos.profiles.get((req as any).auth.tenantId);
+    res.json({ success: true, profile: stored ? stored.profile : {} });
+    return;
+  }
+  res.json({ success: true, profile: {} });
+});
+app.post('/api/profile', foundation.requireAuth, async (req, res) => {
+  const existing = await repos.profiles.get((req as any).auth.tenantId);
+  const merged = { ...(existing ? existing.profile : {}), ...req.body };
+  await repos.profiles.put({ tenantId: (req as any).auth.tenantId, profile: merged, updatedAt: new Date() });
+  res.json({ success: true, profile: merged });
+});
+
 const distDir = path.resolve(process.cwd(), 'dist');
 if (!fs.existsSync(path.join(distDir, 'index.html'))) throw new Error('dist missing - run npm run build first');
 app.use(express.static(distDir));

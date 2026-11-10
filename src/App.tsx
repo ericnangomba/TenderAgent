@@ -25,7 +25,7 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   // Light-first product: theme toggle removed by product decision (redesign).
   const isDarkMode = false;
-  const [selectedTender, setSelectedTender] = useState<ITender | null>(SAMPLE_TENDERS[0]);
+  const [selectedTender, setSelectedTender] = useState<ITender | null>(null);
   const [calculatorSystem, setCalculatorSystem] = useState<'80/20' | '90/10'>('80/20');
   const [calculatorTenderTitle, setCalculatorTenderTitle] = useState<string>('National Treasury RT57-2026-ICT');
   const [activeSkeleton, setActiveSkeleton] = useState<IBidResponseSkeleton | null>(null);
@@ -53,20 +53,9 @@ export default function App() {
   };
 
   // POPIA SME Profile
-  const [userProfile, setUserProfile] = useState<IUserProfile>({
-    companyName: 'Apex Strategic Solutions (Pty) Ltd',
-    registrationNumber: '2023/849201/07',
-    csdNumber: 'MAAA0821945',
-    taxComplianceStatusPin: 'TCS-9482104-Z',
-    bbbeeLevel: 1,
-    bbbeeType: 'EME',
-    cidbGrading: '7CE PE',
-    coidaGoodStandingValid: true,
-    coidaExpiryDate: '2027-04-30',
-    contactEmail: 'tenders@apexstrategic.co.za',
-    contactPhone: '+27 (0)11 482 9200',
-    province: 'Gauteng'
-  });
+  // Empty until the workspace saves real company details; no sample company
+  // is ever presented as a signed-in account's own data.
+  const [userProfile, setUserProfile] = useState<IUserProfile>({} as IUserProfile);
 
   // Load profile from server on mount
   useEffect(() => {
@@ -153,9 +142,7 @@ export default function App() {
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           isDarkMode={isDarkMode}
           isAdmin={Boolean(auth?.isAdmin)}
-            onOpenSkeletonModal={() => handleOpenSkeleton(activeSkeleton || undefined)}
-          hasAnalyzedTender={Boolean(selectedTender)}
-          companyName={userProfile.companyName}
+          companyName={userProfile.companyName || auth?.email || ''}
           taxPinOnFile={Boolean(userProfile.taxComplianceStatusPin)}
           isSampleProfile={!auth}
         />
@@ -168,6 +155,7 @@ export default function App() {
               onOpenSkeleton={handleOpenSkeleton}
               onSwitchToCalculator={handleSwitchToCalculator}
               initialSelectedTender={selectedTender}
+              isAdmin={Boolean(auth?.isAdmin)}
               isDarkMode={isDarkMode}
             />
           )}
@@ -241,20 +229,11 @@ export default function App() {
           )}
         </main>
 
-        {/* Clean Footer */}
+        {/* Footer */}
         <footer className={`py-5 px-6 border-t text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-slate-500' : 'border-slate-200 bg-white text-slate-500'
           }`}>
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span>🇿🇦 TenderAgent Micro-SaaS</span>
-              <span>·</span>
-              <span>POPIA privacy controls</span>
-              <span>·</span>
-              <span>PPPFA & Preferential Procurement Regs 2022</span>
-            </div>
-            <div>
-              Mastra Agent SDK · Gemma 2 AI Engine · Sentry Custom Spans
-            </div>
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+            <span>TenderAgent · South African tender workspace</span>
           </div>
         </footer>
 

@@ -75,9 +75,6 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
               <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 SME Credential Vault
               </h2>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                POPIA privacy controls
-              </span>
             </div>
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} leading-relaxed max-w-2xl`}>
               Store your South African statutory procurement credentials.

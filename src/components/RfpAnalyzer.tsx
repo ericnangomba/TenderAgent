@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Upload, FileText, CheckCircle, ShieldAlert, Layers, RefreshCw,
   ChevronRight, Building, Calendar, DollarSign, Award, CheckCircle2,
-  AlertCircle, Sparkles, Terminal, FileCode, Check, ShieldCheck
+  AlertCircle, Sparkles, Terminal, FileCode, Check, ShieldCheck, FileSearch
 } from 'lucide-react';
 import { SAMPLE_TENDERS } from '../lib/data/sampleTenders';
 import { ITender, IUserProfile, ISentrySpanRecord, IBidResponseSkeleton } from '../lib/types/tender';
@@ -11,6 +11,8 @@ interface RfpAnalyzerProps {
   userProfile: IUserProfile;
   onOpenSkeleton: (skeleton: IBidResponseSkeleton) => void;
   onSwitchToCalculator: (pointsSystem: '80/20' | '90/10', tenderTitle: string) => void;
+  /** Operator flag: the model-switcher bar is platform tooling, not customer UI. */
+  isAdmin?: boolean;
   initialSelectedTender?: ITender | null;
   isDarkMode?: boolean;
 }
@@ -19,16 +21,14 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   userProfile,
   onOpenSkeleton,
   onSwitchToCalculator,
+  isAdmin = false,
   initialSelectedTender,
   isDarkMode = false
 }) => {
   const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(0);
-  const [rawText, setRawText] = useState<string>(
-    initialSelectedTender?.rawTextExcerpt || SAMPLE_TENDERS[0].rawTextExcerpt || ''
-  );
-  const [referenceId, setReferenceId] = useState<string>(
-    initialSelectedTender?.referenceNumber || SAMPLE_TENDERS[0].referenceNumber
-  );
+  const [showSamples, setShowSamples] = useState<boolean>(false);
+  const [rawText, setRawText] = useState<string>(initialSelectedTender?.rawTextExcerpt || '');
+  const [referenceId, setReferenceId] = useState<string>(initialSelectedTender?.referenceNumber || '');
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [traceLogs, setTraceLogs] = useState<string[]>([]);
   const [spans, setSpans] = useState<ISentrySpanRecord[]>([]);
@@ -44,6 +44,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
   // Check local models on mount
   React.useEffect(() => {
+    if (!isAdmin) return; // model detection is an operator endpoint
     fetch('/api/models/detect')
       .then(r => r.json())
       .then(d => {
@@ -59,7 +60,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         }
       })
       .catch(() => setIsLocalOnline(false));
-  }, []);
+  }, [isAdmin]);
 
   // Detect raw PDF binary stream
   const isRawPdfStream = rawText.trim().startsWith('%PDF-') || (rawText.includes('%PDF-') && rawText.includes('endobj'));
@@ -275,30 +276,18 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-xl">🇿🇦</span>
+              <FileSearch className="w-6 h-6 text-emerald-700" />
               <h2 className={`text-xl font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                RFP Compliance Auditor & Response Synthesizer
+                Check what a tender asks for
               </h2>
-              <span className="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                POPIA privacy controls
-              </span>
             </div>
             <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'} max-w-2xl leading-relaxed`}>
-              Analyze state-issued and corporate RFP documents for mandatory returnables (CSD, SARS TCS PIN, B-BBEE, CIDB, COIDA)
-              and synthesize complete bid response skeletons aligned with Preferential Procurement Regulations 2022.
+              Upload a tender document and get a clear list of its requirements - CSD registration, SARS TCS PIN, B-BBEE, CIDB and COIDA -
+              plus a response outline you can build your bid on.
             </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => onSwitchToCalculator('80/20', extractedData?.title || 'Active RFP')}
-              className={`px-3.5 py-2 text-xs font-medium rounded-lg border transition-colors ${isDarkMode
-                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
-                  : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-                }`}
-            >
-              80/20 Calculator
-            </button>
             <button
               onClick={() => userProfile && onOpenSkeleton(activeSkeleton || SAMPLE_TENDERS[0] as any)}
               disabled={!extractedData && !activeSkeleton}
@@ -327,21 +316,28 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               <div className="flex items-center gap-2">
                 <Upload className="w-5 h-5 text-emerald-600" />
                 <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Ingest RFP Target File
+                  Upload a tender document
                 </h3>
               </div>
             </div>
 
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} mb-4`}>
-              Drop corporate or state-issued tender guidelines PDF/text below. Text is extracted and analyzed by the configured AI engine, with a rule-based PPPFA fallback when no AI model is available.
+              Drop the tender PDF or paste its text below. Your checklist appears on this page when the check finishes.
             </p>
 
-            {/* Specimen Tenders Selector */}
+            {/* Sample tenders: optional, clearly labeled, collapsed by default */}
             <div className="mb-4">
-              <label className={`text-xs font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5 block`}>
-                Load a South African tender specimen:
-              </label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowSamples(v => !v)}
+                className={`text-xs font-medium flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showSamples ? 'rotate-90' : ''}`} />
+                No document handy? Try a sample tender
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 font-bold">SAMPLES</span>
+              </button>
+              {showSamples && (
+              <div className="grid grid-cols-2 gap-2 text-xs mt-2">
                 {SAMPLE_TENDERS.map((preset, idx) => (
                   <button
                     key={preset.id}
@@ -366,6 +362,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </button>
                 ))}
               </div>
+              )}
             </div>
 
             {/* File Upload Drag/Drop Box */}
@@ -448,7 +445,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               </div>
             )}
 
-            {/* AI Engine & Local Model Detection Bar */}
+            {/* AI Engine & Local Model Detection Bar (operator only) */}
+            {isAdmin && (
             <div className={`p-2.5 rounded-lg border mb-4 text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
               <div className="flex items-center justify-between mb-1.5">
@@ -513,6 +511,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 </button>
               </div>
             </div>
+            )}
 
             {/* Reference ID & Raw Text Preview Area */}
             <div className="space-y-3 mb-5">
@@ -564,12 +563,12 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               {isUploading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                  <span>Analyzing Document Tiers with Mastra...</span>
+                  <span>Checking your document...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Process RFP Document with Gemma 2</span>
+                  <span>Check this document</span>
                 </>
               )}
             </button>
@@ -581,19 +580,19 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 flex flex-col h-full min-h-[440px]`}>
             <div className="flex items-center justify-between mb-3 border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <Terminal className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <RefreshCw className={`w-5 h-5 ${isUploading ? 'text-emerald-600 animate-spin' : 'text-slate-400'}`} />
                 <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Execution Trace
+                  Progress
                 </h3>
               </div>
               <div className="flex items-center gap-2">
                 {isUploading ? (
                   <>
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-xs text-slate-400 font-mono">running: agent.pipeline</span>
+                    <span className="text-xs text-slate-500">Checking your document...</span>
                   </>
                 ) : (
-                  <span className="text-xs text-slate-400 font-mono">idle</span>
+                  <span className="text-xs text-slate-400">Waiting</span>
                 )}
               </div>
             </div>
@@ -614,43 +613,23 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               </div>
             )}
 
-            {/* Trace logs terminal box (authentic dark console interior) */}
-            <div className="bg-slate-950 rounded-lg p-4 font-mono text-xs flex-1 overflow-y-auto space-y-2 border border-slate-800 max-h-[360px] text-slate-200">
+            {/* Progress log: plain-language panel, light in both themes */}
+            <div className={`rounded-lg p-4 text-xs flex-1 overflow-y-auto space-y-2 border max-h-[360px] ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
               {traceLogs.length === 0 ? (
-                <div className="text-slate-500 italic flex items-center gap-2 h-full justify-center py-16">
-                  <Terminal className="w-4 h-4" />
-                  <span>Awaiting submission stream trigger sequence... Click &ldquo;Process RFP Document&rdquo;.</span>
+                <div className="text-slate-400 flex flex-col items-center gap-2 h-full justify-center py-16 text-center">
+                  <FileText className="w-5 h-5 text-slate-300" />
+                  <span>Nothing running yet. Upload a tender document and start the check - each step will be listed here as it happens.</span>
                 </div>
               ) : (
-                traceLogs.map((log, i) => {
-                  const isSentry = log.includes('Sentry Trace');
-                  const isMastra = log.includes('Mastra Engine');
-                  const isGemma = log.includes('Gemma AI Core');
-                  const isPopia = log.includes('POPIA Sandbox');
-                  const isMongo = log.includes('MongoDB');
-
-                  let textColor = 'text-slate-300';
-                  if (isSentry) textColor = 'text-purple-400 font-semibold';
-                  else if (isMastra) textColor = 'text-amber-400';
-                  else if (isGemma) textColor = 'text-cyan-300';
-                  else if (isPopia) textColor = 'text-emerald-400';
-                  else if (isMongo) textColor = 'text-blue-400';
-
-                  return (
-                    <div key={i} className={`flex items-start gap-2 leading-relaxed ${textColor}`}>
-                      <span className="text-slate-600 select-none text-[10px] shrink-0 pt-0.5">
-                        {String(i + 1).padStart(2, '0')}
-                      </span>
-                      <span>{log}</span>
-                    </div>
-                  );
-                })
+                traceLogs.map((log, i) => (
+                  <div key={i} className="flex items-start gap-2 leading-relaxed">
+                    <span className="text-slate-400 select-none text-[10px] shrink-0 pt-0.5 font-mono">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span>{log}</span>
+                  </div>
+                ))
               )}
-            </div>
-
-            <div className={`mt-3 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'} flex items-center justify-between text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              <span>Instrumentation: Sentry tracing (when configured)</span>
-              <span>Processing route reported in the trace above</span>
             </div>
           </div>
         </div>
@@ -662,7 +641,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
           <div className="flex items-center gap-2">
             <CheckCircle className="w-5 h-5 text-emerald-600" />
             <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              Extracted Compliance Audits
+              Your compliance checklist
             </h3>
           </div>
           {extractedData && (
@@ -675,8 +654,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         {!extractedData ? (
           <div className="text-center py-12 text-slate-400">
             <ShieldAlert className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm">No analysis reports cached or initialized for this session.</p>
-            <p className="text-xs text-slate-400 mt-1">Select an RFP above and trigger the parsing pipeline.</p>
+            <p className="text-sm">Nothing checked yet.</p>
+            <p className="text-xs text-slate-400 mt-1">Upload a tender document above and its requirements will be listed here.</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -882,7 +861,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               }`}>
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Payload stored securely under POPIA compliant identifier in MongoDB.</span>
+                <span>Finished checks are saved to your workspace.</span>
               </div>
 
               <div className="flex items-center gap-3 w-full sm:w-auto">

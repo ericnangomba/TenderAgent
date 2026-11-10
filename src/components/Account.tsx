@@ -69,16 +69,19 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
         {/* Workspace identifiers: the operator copies their own user ID into
             the deployment environment (ADMIN_USER_IDS) to manage platform
             settings. Own IDs only - no one else's are shown anywhere. */}
-        <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-          <div className="flex items-center gap-2 mb-2">
-            <KeyRound className={`w-3.5 h-3.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
-            <span className={`text-[11px] font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Workspace identifiers</span>
-          </div>
-          <dl className={`text-xs space-y-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        <details className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+          <summary className={`cursor-pointer select-none flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            <KeyRound className="w-3.5 h-3.5" />
+            Support details
+          </summary>
+          <p className={`mt-2 text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+            Quote these if you ever need help with your workspace.
+          </p>
+          <dl className={`mt-1 text-xs space-y-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
             <div className="flex gap-2"><dt className="w-20 shrink-0">User ID</dt><dd className="font-mono break-all">{auth.userId}</dd></div>
             <div className="flex gap-2"><dt className="w-20 shrink-0">Tenant ID</dt><dd className="font-mono break-all">{auth.tenantId}</dd></div>
           </dl>
-        </div>
+        </details>
       </div>
 
       <div className={card}>

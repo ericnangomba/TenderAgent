@@ -89,7 +89,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'SME Profile Vault',
           description: 'CSD, SARS, B-BBEE, CIDB',
           icon: Building2,
-          status: userProfile.csdNumber ? 'MAAA' : 'Incomplete'
+          status: userProfile.csdNumber ? 'On file' : 'Not set up'
         },
         {
           key: 'sbd' as TabKey,
@@ -276,27 +276,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
           } space-y-3`}>
 
           {/* Active Profile Info */}
-          <div className={`p-2.5 rounded-lg border text-xs ${isDarkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200'
-            }`}>
-            <div className="flex items-center justify-between mb-1">
-              <span className={`font-semibold truncate max-w-[140px] ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
-                {userProfile.companyName}
-              </span>
-              {isSampleProfile ? (
-                <span className="text-[9px] font-mono text-amber-600 font-bold">
-                  SAMPLE
+          <button
+            onClick={() => { setActiveTab('vault'); onCloseMobile(); }}
+            className={`w-full text-left p-2.5 rounded-lg border text-xs transition-colors ${isDarkMode ? 'bg-slate-900/80 border-slate-800 hover:bg-slate-900' : 'bg-white border-slate-200 hover:border-emerald-300'
+              }`}
+          >
+            {userProfile.companyName ? (
+              <>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`font-semibold truncate max-w-[160px] ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                    {userProfile.companyName}
+                  </span>
+                  {userProfile.bbbeeLevel ? (
+                    <span className="text-[9px] font-mono text-emerald-600 font-bold">
+                      Lvl {userProfile.bbbeeLevel}
+                    </span>
+                  ) : null}
+                </div>
+                <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                  CSD: {userProfile.csdNumber || 'not captured yet'}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className={`font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Set up your company profile
                 </span>
-              ) : (
-                <span className="text-[9px] font-mono text-emerald-600 font-bold">
-                  Lvl {userProfile.bbbeeLevel}
-                </span>
-              )}
-            </div>
-            <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} flex items-center justify-between`}>
-              <span>CSD: {userProfile.csdNumber || 'Unset'}</span>
-              <span className="text-emerald-600 font-semibold">POPIA privacy controls</span>
-            </div>
-          </div>
+                <ChevronRight className="w-3.5 h-3.5 text-emerald-600" />
+              </div>
+            )}
+          </button>
 
 
         </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, ShieldCheck, FileCode, Shield } from 'lucide-react';
+import { Menu, ShieldCheck, Shield } from 'lucide-react';
 import { TabKey } from './Sidebar';
 import tenderAgentLogo from '../assets/tenderagentlogo.png';
 import { detectLocalModels } from '../lib/services/localModelDetector';
@@ -10,9 +10,7 @@ interface HeaderProps {
   isDarkMode: boolean;
   /** Operator flag: technical model-status pill shows for admins only. */
   isAdmin?: boolean;
-  onOpenSkeletonModal: () => void;
-  hasAnalyzedTender: boolean;
-  companyName: string;
+  companyName?: string;
   taxPinOnFile: boolean;
   isSampleProfile: boolean;
 }
@@ -22,8 +20,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenMobileSidebar,
   isDarkMode,
   isAdmin = false,
-  onOpenSkeletonModal,
-  hasAnalyzedTender,
   companyName,
   taxPinOnFile,
   isSampleProfile
@@ -217,23 +213,6 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
         )}
 
-        {/* Subtle POPIA Indicator (Desktop) */}
-        <div className={`hidden md:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
-          }`}>
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          <span>POPIA privacy controls</span>
-        </div>
-
-        {/* Quick Bid Skeleton Download Button */}
-        {hasAnalyzedTender && (
-          <button
-            onClick={onOpenSkeletonModal}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors shadow-2xs"
-          >
-            <FileCode className="w-3.5 h-3.5" />
-            <span>Bid Skeleton (.doc)</span>
-          </button>
-        )}
 
         {/* User SME Badge */}
         <div className={`hidden sm:flex items-center gap-2 pl-2 border-l ${isDarkMode ? 'border-slate-800' : 'border-slate-200'
