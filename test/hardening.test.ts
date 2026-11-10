@@ -25,6 +25,41 @@ test('cross-origin state-changing requests are rejected', async () => {
   assert.equal((await res.json()).error, 'origin_forbidden');
 });
 
+test('configured PUBLIC_ORIGIN is accepted for state-changing calls (front-door proxy)', async () => {
+  const proxied = await startTestApp({ publicOrigin: 'https://tenderagent1.netlify.app' });
+  try {
+    const res = await fetch(`${proxied.baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://tenderagent1.netlify.app' },
+      body: JSON.stringify({ email: 'a@b.co', password: 'x'.repeat(12) }),
+    });
+    assert.notEqual(res.status, 403);
+  } finally {
+    await stopTestApp(proxied);
+  }
+});
+
+test('PUBLIC_ORIGIN matching is exact - look-alike origins stay rejected', async () => {
+  const proxied = await startTestApp({ publicOrigin: 'https://tenderagent1.netlify.app' });
+  try {
+    for (const origin of [
+      'https://evil-tenderagent1.netlify.app',
+      'https://tenderagent1.netlify.app.evil.example.com',
+      'http://tenderagent1.netlify.app',
+    ]) {
+      const res = await fetch(`${proxied.baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: origin },
+        body: JSON.stringify({ email: 'a@b.co', password: 'x'.repeat(12) }),
+      });
+      assert.equal(res.status, 403, origin);
+      assert.equal((await res.json()).error, 'origin_forbidden');
+    }
+  } finally {
+    await stopTestApp(proxied);
+  }
+});
+
 test('auth endpoints are rate limited', async () => {
   const limited = await startTestApp({ authRateLimit: { maxAttempts: 3, windowMs: 60_000 } });
   try {

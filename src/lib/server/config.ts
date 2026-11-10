@@ -76,6 +76,12 @@ export interface FoundationConfig {
   postgresUri: string;
   /** Mark the session cookie Secure (set true once the app is served over HTTPS). */
   cookieSecure: boolean;
+  /** Exact public site origin allowed for state-changing calls when the app is
+   *  reached through a same-site reverse proxy whose upstream Host differs
+   *  (e.g. Netlify proxying /api to a private backend). Exact origin match
+   *  only - no suffixes or wildcards. Empty (default) disables: only the
+   *  request's own Host is accepted, the pre-proxy behavior. */
+  publicOrigin: string;
   /**
    * Server-generated user IDs with operator (admin) access, from ADMIN_USER_IDS
    * (comma-separated). IDs are used instead of emails because signup email is
@@ -125,6 +131,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FoundationConf
     mongoUri: env.MONGODB_URI || '',
     postgresUri: env.DATABASE_URL || '',
     cookieSecure: env.COOKIE_SECURE === 'true',
+    publicOrigin: env.PUBLIC_ORIGIN || '',
     trustProxy: env.TRUST_PROXY === undefined ? false : (env.TRUST_PROXY === 'false' ? false : env.TRUST_PROXY || true),
     adminUserIds: (env.ADMIN_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean),
   };

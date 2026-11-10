@@ -130,7 +130,8 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     const origin = req.headers.origin;
     if (origin) {
       try {
-        if (new URL(origin).host !== req.headers.host) {
+        // Exact configured public origin (front-door proxy) or same-host only.
+        if (new URL(origin).host !== req.headers.host && origin !== config.publicOrigin) {
           res.status(403).json({ success: false, error: 'origin_forbidden' });
           return;
         }
