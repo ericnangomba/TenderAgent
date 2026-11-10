@@ -106,7 +106,7 @@ async function shotMobile(name, cookie, tabLabel) {
     }, tabLabel);
     await new Promise(r => setTimeout(r, 800));
   }
-  await page.screenshot({ path: `${outDir}/${name}.png` });
+  await page.screenshot({ path: `${outDir}/${name}.png`, fullPage: true });
   console.log(`shot ${name}`);
   await page.close();
 }

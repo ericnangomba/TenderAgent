@@ -577,7 +577,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
         {/* Right Column: Execution Trace */}
         <div className="lg:col-span-6 space-y-4">
-          <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 flex flex-col h-full min-h-[440px]`}>
+          <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 flex flex-col h-full lg:min-h-[440px]`}>
             <div className="flex items-center justify-between mb-3 border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <RefreshCw className={`w-5 h-5 ${isUploading ? 'text-emerald-600 animate-spin' : 'text-slate-400'}`} />
@@ -616,7 +616,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
             {/* Progress log: plain-language panel, light in both themes */}
             <div className={`rounded-lg p-4 text-xs flex-1 overflow-y-auto space-y-2 border max-h-[360px] ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
               {traceLogs.length === 0 ? (
-                <div className="text-slate-400 flex flex-col items-center gap-2 h-full justify-center py-16 text-center">
+                <div className="text-slate-400 flex flex-col items-center gap-2 h-full justify-center py-8 lg:py-16 text-center">
                   <FileText className="w-5 h-5 text-slate-300" />
                   <span>Nothing running yet. Upload a tender document and start the check - each step will be listed here as it happens.</span>
                 </div>

@@ -71,7 +71,7 @@ export const Landing: React.FC<Props> = ({ onAuthChange }) => {
 
         </section>
 
-        <aside id="auth" className="order-2 lg:order-none w-full lg:sticky lg:top-10 scroll-mt-6">
+        <aside id="auth" className="order-2 lg:order-none w-full lg:row-span-2 lg:sticky lg:top-10 scroll-mt-6">
           <AuthCard onAuthChange={onAuthChange} initialMode="signup" />
           <p className="text-[11px] leading-relaxed text-stone-400 mt-4 px-1">
             Your workspace keeps your company documents under your own account.
