@@ -99,6 +99,14 @@ export async function ensurePostgresSchema(pool: PoolLike): Promise<void> {
  *  the explicit escape hatch for a local dev database without TLS; never set
  *  it for a networked database. */
 export async function connectPostgres(uri: string): Promise<Pool> {
+  // Verified live against Neon (pg 8.23.1, PostgreSQL 18.6): the console
+  // connection string (sslmode=require&channel_binding=require) connects as-is
+  // - pg ignores channel_binding rather than failing. The explicit ssl option
+  // still matters: pg 8 treats sslmode=require as verify-full, but pg 9 will
+  // adopt weaker libpq semantics, so certificate verification is pinned here
+  // instead of inherited from the string. PGSSL=disable is the explicit
+  // escape hatch for a local dev database without TLS; never set it for a
+  // networked database.
   const ssl = process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: true };
   const pool = new Pool({ connectionString: uri, max: 5, ssl });
   await ensurePostgresSchema(pool);
