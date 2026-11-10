@@ -251,6 +251,17 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
         return;
       }
       const now = new Date();
+      const existing = await repos.entitlements.get(user.tenantId);
+      if (
+        existing &&
+        existing.planId !== 'test_cohort' &&
+        existing.status !== null &&
+        effectiveStatus(existing, now, config.pastDueGraceDays) === 'active'
+      ) {
+        // Never overwrite a live paid subscription with a comp grant.
+        res.status(409).json({ success: false, error: 'account_has_active_paid_subscription', entitlementUnchanged: true });
+        return;
+      }
       const periodEnd = new Date(now.getTime() + dayCount * 24 * 60 * 60 * 1000);
       await repos.entitlements.put({
         tenantId: user.tenantId,

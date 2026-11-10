@@ -8,15 +8,15 @@ export function generateBidResponseSkeleton(
   tenderData: any,
   companyProfile?: Partial<IUserProfile>
 ): IBidResponseSkeleton {
-  // No profile on file: the skeleton is a template with bracketed
-  // placeholders, never a fabricated bidder identity.
-  const company = companyProfile || {
+  // Placeholder baseline: any field the profile lacks renders as a bracketed
+  // instruction, never blank and never a fabricated value.
+  const PLACEHOLDERS = {
     companyName: '[Your registered company name]',
-    registrationNumber: '[Company registration number]',
+    registrationNumber: '',
     csdNumber: '',
     taxComplianceStatusPin: '',
     bbbeeLevel: 0,
-    bbbeeType: 'EME',
+    bbbeeType: 'EME' as const,
     cidbGrading: '',
     coidaGoodStandingValid: false,
     coidaExpiryDate: '',
@@ -24,6 +24,10 @@ export function generateBidResponseSkeleton(
     contactPhone: '[Contact phone]',
     province: '[Province]'
   };
+  const company = { ...PLACEHOLDERS, ...Object.fromEntries(
+    Object.entries(companyProfile || {}).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  ) };
+  if (!company.companyName) company.companyName = PLACEHOLDERS.companyName;
 
   const tenderRef = tenderData.referenceNumber || '[Tender reference - confirm from the tender document]';
   const tenderTitle = tenderData.title || 'Procurement of Goods & Services';
@@ -43,14 +47,16 @@ export function generateBidResponseSkeleton(
         title: 'Section 1: Executive Summary & Bidder Eligibility Declaration',
         description: 'Formal statement of compliance with South African procurement statutes (PPPFA & SCM regulations).',
         content: `1.1 Introduction
-${company.companyName} (Registration No: ${company.registrationNumber}) is honored to submit this formal proposal in response to tender ${tenderRef}: "${tenderTitle}" issued by ${dept}.
+${company.companyName}${company.registrationNumber ? ` (Registration No: ${company.registrationNumber})` : ''} is honored to submit this formal proposal in response to tender ${tenderRef}: "${tenderTitle}" issued by ${dept}.
 
 1.2 Legal Standing & Statutory Verification
 - Central Supplier Database (CSD): ${company.csdNumber ? `MAAA supplier number on file: ${company.csdNumber}` : '[MAAA supplier number]'}.
 - South African Revenue Service (SARS): Tax Compliance Status (TCS) PIN: ${company.taxComplianceStatusPin || '[TCS PIN]'}.
 ${company.bbbeeLevel ? `- Broad-Based Black Economic Empowerment (B-BBEE): Level ${company.bbbeeLevel} Contributor (${company.bbbeeType}).` : '- B-BBEE: [level per your certificate or affidavit]'}
 ${company.coidaGoodStandingValid && company.coidaExpiryDate ? `- Compensation Fund (COIDA): Letter of Good Standing held, expiry ${company.coidaExpiryDate}.` : ''}
-${tenderData.cidbGradingRequired ? `- CIDB Registration: Qualified contractor status holding ${company.cidbGrading || 'applicable grading'}.` : ''}
+${tenderData.cidbGradingRequired ? (company.cidbGrading
+  ? `- CIDB Registration: grading ${company.cidbGrading} on file - verify it meets this tender's stated ${tenderData.cidbGradingRequired} requirement.`
+  : `- CIDB Registration: [this tender states ${tenderData.cidbGradingRequired} - add your cidb registration and grading, or confirm it does not apply]`) : ''}
 
 1.3 Protection of Personal Information Act (POPIA) Undertaking
 In accordance with Act 4 of 2013, all candidate personnel credentials, financial statements, and proprietary project methodologies contained herein are submitted under confidential procurement privilege.`

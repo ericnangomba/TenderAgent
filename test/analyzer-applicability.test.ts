@@ -121,3 +121,18 @@ test('skeleton: no unconditional VAT-inclusive claim or B-BBEE level 0', () => {
   assert.match(blob, /standard VAT rate is 15%/);
   assert.match(blob, /\[Tender reference/);
 });
+
+test('skeleton: no unverified eligibility claims (CIDB, registration no, B-BBEE level in exports)', () => {
+  const sk = generateBidResponseSkeleton({ referenceNumber: 'X-4', title: 'T', cidbGradingRequired: '5CE' });
+  const blob = JSON.stringify(sk);
+  assert.ok(!/Qualified contractor/.test(blob), 'no unverified qualification claim');
+  assert.match(blob, /\[this tender states 5CE/);
+  assert.ok(!/Registration No: \)/.test(blob), 'no empty registration parenthetical');
+  const withGrading = generateBidResponseSkeleton(
+    { referenceNumber: 'X-5', title: 'T', cidbGradingRequired: '5CE' },
+    { companyName: 'Test Co', registrationNumber: '2020/123456/07', csdNumber: 'MAAA0000001', taxComplianceStatusPin: 'PIN1', bbbeeLevel: 2, bbbeeType: 'QSE', cidbGrading: '4CE', coidaGoodStandingValid: false, coidaExpiryDate: '', contactEmail: '', contactPhone: '', province: '' }
+  );
+  const blob2 = JSON.stringify(withGrading);
+  assert.match(blob2, /grading 4CE on file - verify it meets this tender's stated 5CE/);
+  assert.ok(!/Qualified contractor/.test(blob2));
+});

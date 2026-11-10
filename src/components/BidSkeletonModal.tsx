@@ -18,13 +18,24 @@ export const BidSkeletonModal: React.FC<BidSkeletonModalProps> = ({
 
   if (!skeleton) return null;
 
+  const humanDate = (v: string) => {
+    const t = Date.parse(v);
+    if (isNaN(t)) return v || 'Confirm in the tender document';
+    return new Date(t).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  };
+  const bidderLine = [
+    skeleton.bidderProfile.companyName || '[Bidder company name]',
+    skeleton.bidderProfile.csdNumber ? `CSD: ${skeleton.bidderProfile.csdNumber}` : null,
+    skeleton.bidderProfile.bbbeeLevel ? `B-BBEE Level ${skeleton.bidderProfile.bbbeeLevel}` : null,
+  ].filter(Boolean).join(' | ');
+
   const handleCopy = () => {
     const fullText = `TENDER BID RESPONSE SKELETON
 Tender Reference: ${skeleton.tenderReference}
 Tender Title: ${skeleton.tenderTitle}
 Issuing Department: ${skeleton.issuingDepartment}
-Bidder: ${skeleton.bidderProfile.companyName || 'South African SME Bidder'} (CSD: ${skeleton.bidderProfile.csdNumber || 'N/A'}, B-BBEE Level ${skeleton.bidderProfile.bbbeeLevel || 1})
-Closing Date: ${skeleton.closingDate}
+Bidder: ${bidderLine}
+Closing Date: ${humanDate(skeleton.closingDate)}
 
 ==================================================
 ${skeleton.sections.map(s => `${s.title}\n\n${s.content}`).join('\n\n==================================================\n\n')}
@@ -60,13 +71,17 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
   <p><strong>Tender Reference:</strong> ${skeleton.tenderReference}</p>
   <p><strong>Title:</strong> ${skeleton.tenderTitle}</p>
   <p><strong>Issuing Organ of State:</strong> ${skeleton.issuingDepartment}</p>
-  <p><strong>Bidder Entity:</strong> ${skeleton.bidderProfile.companyName} (Reg: ${skeleton.bidderProfile.registrationNumber})</p>
-  <p><strong>CSD Registration:</strong> ${skeleton.bidderProfile.csdNumber} | <strong>B-BBEE Status:</strong> Level ${skeleton.bidderProfile.bbbeeLevel} (${skeleton.bidderProfile.bbbeeType})</p>
+  <p><strong>Bidder Entity:</strong> ${skeleton.bidderProfile.companyName || '[Bidder company name]'}${skeleton.bidderProfile.registrationNumber ? ` (Reg: ${skeleton.bidderProfile.registrationNumber})` : ''}</p>
+  <p>${[
+    skeleton.bidderProfile.csdNumber ? `<strong>CSD Registration:</strong> ${skeleton.bidderProfile.csdNumber}` : '<strong>CSD Registration:</strong> [MAAA supplier number]',
+    skeleton.bidderProfile.bbbeeLevel ? `<strong>B-BBEE Status:</strong> Level ${skeleton.bidderProfile.bbbeeLevel} (${skeleton.bidderProfile.bbbeeType})` : '<strong>B-BBEE Status:</strong> [level per certificate or affidavit]',
+  ].join(' | ')}</p>
+  <p><strong>Closing Date:</strong> ${humanDate(skeleton.closingDate)}</p>
   <hr/>
 
   ${skeleton.sections.map(s => `<h2>${s.title}</h2><p>${s.content.replace(/\n/g, '<br/>')}</p>`).join('')}
 
-  <h2>Commercial Price Schedule Framework (ZAR inclusive of 15% VAT)</h2>
+  <h2>Commercial Price Schedule Framework (state whether prices include or exclude VAT as this tender requires)</h2>
   <table>
     <thead>
       <tr>
@@ -117,17 +132,17 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
       }`}>
         
         {/* Header */}
-        <div className={`px-6 py-4 border-b flex items-center justify-between ${
+        <div className={`px-4 sm:px-6 py-4 border-b flex flex-wrap items-center justify-between gap-x-3 gap-y-2 ${
           isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
         }`}>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:border dark:border-emerald-800/80 dark:text-emerald-400">
               <FileText className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Draft Bid Response Proposal Skeleton
+                  Draft Bid Response Skeleton
                 </h3>
                 <span className="text-[10px] font-mono uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800 px-1.5 py-0.5 rounded font-bold">
                   POPIA Protected
@@ -172,14 +187,14 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
         </div>
 
         {/* Section Tabs */}
-        <div className={`px-6 py-2.5 border-b flex items-center gap-2 overflow-x-auto text-xs ${
+        <div className={`px-4 sm:px-6 py-2.5 border-b flex items-center gap-2 overflow-x-auto text-xs ${
           isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-100/60 border-slate-200'
         }`}>
           {skeleton.sections.map((sec, idx) => (
             <button
               key={idx}
               onClick={() => setActiveSection(idx)}
-              className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap border ${
+              className={`shrink-0 px-3 py-1.5 rounded-md transition-colors whitespace-nowrap border ${
                 activeSection === idx
                   ? isDarkMode
                     ? 'bg-slate-800 text-emerald-400 font-medium border-slate-700'

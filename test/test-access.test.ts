@@ -91,3 +91,30 @@ test('grant unlocks guarded analysis within quota; revoke closes it', async () =
     await stopTestApp(app);
   }
 });
+
+test('grant never overwrites an active paid subscription', async () => {
+  const { app, tester, operator } = await setup();
+  try {
+    // Simulate a live paid subscription on the tester's tenant
+    const { applyBillingEvent } = await import('../src/lib/server/entitlement');
+    await applyBillingEvent(app.foundation.repos, {
+      eventId: 'paid-1', provider: 'paystack', type: 'subscription.activated',
+      tenantId: tester.tenantId, planId: 'standard_monthly', subscriptionRef: 'sub_paid_1',
+      periodEnd: new Date(Date.now() + 30 * 24 * 3600 * 1000), occurredAt: new Date(),
+    }, new Date());
+
+    const res = await fetch(`${app.baseUrl}/api/admin/test-access/grant`, {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: operator.cookie },
+      body: JSON.stringify({ email: 'tester@example.co.za', days: 14 }),
+    });
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).error, 'account_has_active_paid_subscription');
+
+    const ent = await app.foundation.repos.entitlements.get(tester.tenantId);
+    assert.equal(ent?.planId, 'standard_monthly');
+    assert.equal(ent?.providerSubscriptionRef, 'sub_paid_1');
+    assert.equal(ent?.status, 'active');
+  } finally {
+    await stopTestApp(app);
+  }
+});
