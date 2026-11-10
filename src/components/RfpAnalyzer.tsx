@@ -158,6 +158,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
   const executePipeline = async () => {
     setIsUploading(true);
+    window.dispatchEvent(new CustomEvent('tenderagent:busy', { detail: true }));
     setTraceLogs([]);
     setSpans([]);
     setExtractedData(null);
@@ -258,6 +259,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
       });
     } finally {
       setIsUploading(false);
+      window.dispatchEvent(new CustomEvent('tenderagent:busy', { detail: false }));
     }
   };
 

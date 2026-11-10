@@ -169,7 +169,7 @@ export const TenderDiscovery: React.FC<TenderDiscoveryProps> = ({
             <button
               onClick={syncLiveEtendersPortal}
               disabled={isSyncing}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors shadow-xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 min-h-[40px] text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors shadow-xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
               <span>{isSyncing ? 'Syncing eTenders...' : 'Sync Live etenders.gov.za'}</span>
@@ -177,7 +177,7 @@ export const TenderDiscovery: React.FC<TenderDiscoveryProps> = ({
             <button
               onClick={fetchLeads}
               disabled={isLoading}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${isDarkMode
+              className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[40px] text-xs font-medium rounded-lg border transition-colors ${isDarkMode
                   ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
                   : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
                 }`}
@@ -236,7 +236,7 @@ export const TenderDiscovery: React.FC<TenderDiscoveryProps> = ({
                 key={prov}
                 type="button"
                 onClick={() => setSelectedProvince(prov)}
-                className={`px-2 sm:px-2.5 py-1 rounded text-[11px] transition-colors border ${selectedProvince === prov
+                className={`px-2 sm:px-2.5 py-1 min-h-[40px] rounded text-[11px] transition-colors border ${selectedProvince === prov
                     ? isDarkMode
                       ? 'bg-slate-800 text-emerald-400 font-semibold border-slate-700'
                       : 'bg-emerald-50 text-emerald-800 font-semibold border-emerald-300'
@@ -260,7 +260,7 @@ export const TenderDiscovery: React.FC<TenderDiscoveryProps> = ({
                 key={cat}
                 type="button"
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-2 sm:px-2.5 py-1 rounded text-[11px] transition-colors border ${selectedCategory === cat
+                className={`px-2 sm:px-2.5 py-1 min-h-[40px] rounded text-[11px] transition-colors border ${selectedCategory === cat
                     ? isDarkMode
                       ? 'bg-slate-800 text-amber-300 font-semibold border-slate-700'
                       : 'bg-amber-50 text-amber-800 font-semibold border-amber-300'
@@ -372,7 +372,7 @@ export const TenderDiscovery: React.FC<TenderDiscoveryProps> = ({
                 href={lead.link}
                 target="_blank"
                 rel="noreferrer"
-                className={`text-[11px] flex items-center gap-1 transition-colors ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-800'
+                className={`text-[11px] inline-flex items-center gap-1 py-2.5 -my-1.5 transition-colors ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-800'
                   }`}
               >
                 <span>View Source</span>
@@ -392,7 +392,7 @@ export const TenderDiscovery: React.FC<TenderDiscoveryProps> = ({
                     rawTextExcerpt: lead.rawSampleText || lead.snippet
                   });
                 }}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors shadow-2xs"
+                className="flex items-center gap-1 px-3 py-1.5 min-h-[40px] text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-md transition-colors shadow-2xs"
               >
                 <span>Analyze with Agent</span>
                 <ArrowRight className="w-3.5 h-3.5" />

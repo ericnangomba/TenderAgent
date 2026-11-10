@@ -7,16 +7,26 @@ import { IUserProfile } from '../lib/types/tender';
 
 interface ProfileVaultProps {
   userProfile: IUserProfile;
+  /** 'unavailable' means the account profile could not be LOADED - not that it is empty. */
+  profileStatus?: 'loading' | 'ready' | 'unavailable';
   onUpdateProfile: (updated: IUserProfile) => void;
   isDarkMode?: boolean;
 }
 
 export const ProfileVault: React.FC<ProfileVaultProps> = ({
   userProfile,
+  profileStatus = 'ready',
   onUpdateProfile,
   isDarkMode = false
 }) => {
   const [formData, setFormData] = useState<IUserProfile>(userProfile);
+  // Keep the form in sync with the loaded account profile (mount may precede
+  // the fetch; sign-in swaps the identity). Never sync while unavailable -
+  // the empty defaults are placeholders for rendering, not the account's data.
+  React.useEffect(() => {
+    if (profileStatus === 'ready') setFormData(userProfile);
+  }, [userProfile, profileStatus]);
+  const unavailable = profileStatus === 'unavailable';
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -94,7 +104,14 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
       </div>
 
       {/* Main Form */}
+      {unavailable && (
+        <div role="alert" className={`mb-4 rounded-xl border px-4 py-3 text-xs font-medium flex items-center gap-2 ${isDarkMode ? 'bg-amber-950/40 border-amber-800 text-amber-300' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>Your saved profile could not be loaded - this needs a connection. The empty fields below are NOT your saved details, and saving is paused so nothing gets overwritten.</span>
+        </div>
+      )}
       <form onSubmit={handleSave} className="space-y-6">
+      <fieldset disabled={unavailable} className="space-y-6 disabled:opacity-60">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
           {/* Left Column: Statutory Credentials */}
@@ -103,7 +120,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
               <h3 className={`text-sm font-semibold flex items-center gap-2 border-b pb-3 ${isDarkMode ? 'text-white border-slate-800' : 'text-slate-900 border-slate-200'
                 }`}>
                 <FileCheck className="w-4 h-4 text-emerald-600" />
-                <span>Statutory Government Credentials (Mandatory Returnables)</span>
+                <span>Business details used in your bid skeletons</span>
               </h3>
 
               {/* Company Legal Name */}
@@ -132,7 +149,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="2023/123456/07"
+                    placeholder="Format: YYYY/NNNNNN/NN"
                     value={formData.registrationNumber}
                     onChange={(e) => handleChange('registrationNumber', e.target.value)}
                     className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
@@ -150,7 +167,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="MAAA0821945"
+                    placeholder="Format: MAAA + 10 digits"
                     value={formData.csdNumber}
                     onChange={(e) => handleChange('csdNumber', e.target.value.toUpperCase())}
                     className={`w-full border rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-emerald-500 ${isDarkMode
@@ -170,7 +187,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                   <input
                     type="text"
                     required
-                    placeholder="TCS-9482104-Z"
+                    placeholder="Your SARS TCS PIN"
                     value={formData.taxComplianceStatusPin}
                     onChange={(e) => handleChange('taxComplianceStatusPin', e.target.value)}
                     className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-emerald-500 ${isDarkMode
@@ -211,8 +228,9 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                         : 'bg-slate-50 border-slate-300 text-slate-800'
                       }`}
                   >
+                    <option value={0}>Not set</option>
                     {[1, 2, 3, 4, 5, 6, 7, 8].map(lvl => (
-                      <option key={lvl} value={lvl}>Level {lvl} (135% recognition for L1)</option>
+                      <option key={lvl} value={lvl}>Level {lvl}</option>
                     ))}
                   </select>
                 </div>
@@ -246,7 +264,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
                       id="coida-check"
                       checked={formData.coidaGoodStandingValid}
                       onChange={(e) => handleChange('coidaGoodStandingValid', e.target.checked)}
-                      className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                      className="w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                     />
                     <label htmlFor="coida-check" className={`text-xs font-medium cursor-pointer ${isDarkMode ? 'text-slate-200' : 'text-slate-800'
                       }`}>
@@ -374,6 +392,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
           </div>
 
         </div>
+      </fieldset>
       </form>
 
     </div>

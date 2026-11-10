@@ -50,8 +50,8 @@ export default function App() {
     // Profile is per-workspace once signed in - reload it for the new identity.
     fetch('/api/profile')
       .then(r => r.json())
-      .then(d => { if (d.success && d.profile) setUserProfile(prev => ({ ...prev, ...d.profile })); })
-      .catch(() => undefined);
+      .then(d => { if (d.success && d.profile) { setUserProfile(prev => ({ ...prev, ...d.profile })); setProfileStatus('ready'); } else { setProfileStatus('unavailable'); } })
+      .catch(() => setProfileStatus('unavailable'));
   };
 
   // POPIA SME Profile
@@ -66,6 +66,9 @@ export default function App() {
     coidaExpiryDate: '', contactEmail: '', contactPhone: '', province: '',
   };
   const [userProfile, setUserProfile] = useState<IUserProfile>(EMPTY_PROFILE);
+  // 'unavailable' = we could not load the account's profile (offline/failure).
+  // Distinct from a KNOWN empty profile: views must not treat it as empty or overwrite it.
+  const [profileStatus, setProfileStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
 
   // Load profile from server on mount
   useEffect(() => {
@@ -74,9 +77,12 @@ export default function App() {
       .then(data => {
         if (data.success && data.profile) {
           setUserProfile(prev => ({ ...prev, ...data.profile }));
+          setProfileStatus('ready');
+        } else {
+          setProfileStatus('unavailable');
         }
       })
-      .catch(err => console.warn('[App] Profile fetch fallback:', err));
+      .catch(() => setProfileStatus('unavailable'));
   }, []);
 
   const handleOpenSkeleton = (skeleton?: IBidResponseSkeleton) => {
@@ -212,6 +218,7 @@ export default function App() {
           {activeTab === 'vault' && (
             <ProfileVault
               userProfile={userProfile}
+              profileStatus={profileStatus}
               onUpdateProfile={(updated) => setUserProfile(updated)}
               isDarkMode={isDarkMode}
             />

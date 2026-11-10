@@ -12,6 +12,7 @@ export const SwUpdatePrompt: React.FC<{ isDarkMode?: boolean }> = ({ isDarkMode 
   const [visible, setVisible] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const dirtyRef = useRef(false);
+  const busyRef = useRef(false);
 
   useEffect(() => {
     const onUpdate = () => setVisible(true);
@@ -25,16 +26,20 @@ export const SwUpdatePrompt: React.FC<{ isDarkMode?: boolean }> = ({ isDarkMode 
       }
     };
     window.addEventListener('input', onInput, true);
+    // Uploads/analyses in flight: refreshing would kill them.
+    const onBusy = (e: Event) => { busyRef.current = Boolean((e as CustomEvent).detail); };
+    window.addEventListener('tenderagent:busy', onBusy);
     return () => {
       window.removeEventListener('tenderagent:sw-update', onUpdate);
       window.removeEventListener('input', onInput, true);
+      window.removeEventListener('tenderagent:busy', onBusy);
     };
   }, []);
 
   if (!visible) return null;
 
   const handleRefresh = () => {
-    if (dirtyRef.current && !confirming) {
+    if ((dirtyRef.current || busyRef.current) && !confirming) {
       setConfirming(true);
       return;
     }
@@ -51,7 +56,11 @@ export const SwUpdatePrompt: React.FC<{ isDarkMode?: boolean }> = ({ isDarkMode 
     >
       <div className="flex items-center gap-3 pl-4 pr-1.5 py-2.5">
         <span className="flex-1 text-sm font-medium leading-snug">
-          {confirming ? 'Refresh now? Text you have typed on this page will be lost.' : 'A new version of TenderAgent is ready.'}
+          {confirming
+            ? (busyRef.current
+                ? 'An upload or analysis is still running - refreshing will stop it and lose unsaved text. Refresh anyway?'
+                : 'Refresh now? Text you have typed on this page will be lost.')
+            : 'A new version of TenderAgent is ready.'}
         </span>
         <button
           onClick={handleRefresh}
