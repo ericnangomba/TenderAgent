@@ -42,7 +42,6 @@
     "esbuild": "^0.28.0",
     "mongodb-memory-server": "^11.3.0",
     "pg-mem": "^3.0.14",
-    "puppeteer-core": "^25.16.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"
