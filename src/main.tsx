@@ -4,6 +4,17 @@ import './index.css';
 
 // Register PWA Service Worker for offline mobile app experience
 if ('serviceWorker' in navigator) {
+  // sw.js uses skipWaiting + clients.claim: an updated worker takes over
+  // immediately. If this page was already controlled, its JS/assets are the
+  // previous version - reload once so the update actually applies. First
+  // install (no prior controller) does not reload.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloadedForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloadedForUpdate) return;
+    reloadedForUpdate = true;
+    window.location.reload();
+  });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then((reg) => {

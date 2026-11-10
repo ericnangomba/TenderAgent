@@ -115,7 +115,14 @@ export default function App() {
   // Signed-out visitors see the public landing page only. The customer
   // dashboard and all operator tooling stay behind a live session.
   if (!auth) {
-    return <Landing onAuthChange={handleAuthChange} />;
+    // Install prompt lives pre-auth: the banner belongs on the landing, never
+    // over the workspace where it would cover the form.
+    return (
+      <>
+        <Landing onAuthChange={handleAuthChange} />
+        <PwaInstallPrompt isDarkMode={isDarkMode} showInstall />
+      </>
+    );
   }
 
   return (
@@ -249,7 +256,7 @@ export default function App() {
       )}
 
       {/* PWA Mobile Installation & Offline Status Prompt */}
-      <PwaInstallPrompt isDarkMode={isDarkMode} />
+      <PwaInstallPrompt isDarkMode={isDarkMode} showInstall={false} />
 
     </div>
   );
