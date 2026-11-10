@@ -168,5 +168,29 @@ export function createMongoRepos(): FoundationRepos {
       async listByTenant(tenantId) { const docs = await m.Application.find({ tenantId }).lean(); return docs.map((d: any) => strip(d)); },
       async put(a: any) { await m.Application.updateOne({ _id: `${a.tenantId}:${a.id}` }, { $set: { ...a } }, { upsert: true }); },
     },
+    stats: {
+      async overview(periodKey: string) {
+        const [tenants, users, entAgg, usageAgg] = await Promise.all([
+          m.Tenant.countDocuments(),
+          m.User.countDocuments(),
+          m.Entitlement.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
+          m.Usage.aggregate([
+            { $match: { periodKey } },
+            { $group: { _id: null, analyses: { $sum: '$analyses' }, serpapiLookups: { $sum: '$serpapiLookups' } } },
+          ]),
+        ]);
+        const entitlementsByStatus: Record<string, number> = {};
+        for (const row of entAgg as Array<{ _id: string | null; n: number }>) {
+          entitlementsByStatus[row._id || 'none'] = row.n;
+        }
+        const u = (usageAgg as Array<{ analyses?: number; serpapiLookups?: number }>)[0] || {};
+        return {
+          tenants,
+          users,
+          entitlementsByStatus,
+          usage: { analyses: u.analyses || 0, serpapiLookups: u.serpapiLookups || 0 },
+        };
+      },
+    },
   };
 }

@@ -98,3 +98,8 @@ div:has(> a[href*="netlify.com/drop"]) {
   position: absolute !important;
   z-index: -9999 !important;
 }
+
+/* Editorial display face (redesign): Fraunces with system fallback. */
+.font-display {
+  font-family: "Fraunces", Georgia, "Times New Roman", serif;
+}

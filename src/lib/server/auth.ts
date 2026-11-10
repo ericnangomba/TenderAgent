@@ -193,7 +193,7 @@ export function createAuthRouter(repos: FoundationRepos, config: FoundationConfi
       await repos.users.create(user);
       const { token } = await createSession(repos, config, user);
       setSessionCookie(res, token, config.sessionTtlHours * 60 * 60 * 1000, isSecureRequest(req, config));
-      res.json({ success: true, tenantId: tenant.id, email: user.email });
+      res.json({ success: true, tenantId: tenant.id, email: user.email, userId: user.id, isAdmin: config.adminUserIds.includes(user.id) });
     } catch (err: any) {
       res.status(err.message === 'email_already_registered' ? 409 : 500).json({ success: false, error: err.message });
     }
@@ -220,7 +220,7 @@ export function createAuthRouter(repos: FoundationRepos, config: FoundationConfi
       }
       const { token } = await createSession(repos, config, user);
       setSessionCookie(res, token, config.sessionTtlHours * 60 * 60 * 1000, isSecureRequest(req, config));
-      res.json({ success: true, tenantId: user.tenantId, email: user.email });
+      res.json({ success: true, tenantId: user.tenantId, email: user.email, userId: user.id, isAdmin: config.adminUserIds.includes(user.id) });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -245,7 +245,10 @@ export function createAuthRouter(repos: FoundationRepos, config: FoundationConfi
       res.status(401).json({ success: false, error: 'not_authenticated' });
       return;
     }
-    res.json({ success: true, ...req.auth });
+    // userId is the account's own server-generated ID - shown on the Account
+    // screen so the operator can grant admin access via ADMIN_USER_IDS. Own
+    // ID is not sensitive; admin status is derived server-side from it.
+    res.json({ success: true, ...req.auth, isAdmin: config.adminUserIds.includes(req.auth.userId) });
   });
 
   return router;

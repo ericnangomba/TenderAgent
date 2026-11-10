@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, ShieldCheck, Sun, Moon, FileCode, Shield } from 'lucide-react';
+import { Menu, ShieldCheck, FileCode, Shield } from 'lucide-react';
 import { TabKey } from './Sidebar';
 import tenderAgentLogo from '../assets/tenderagentlogo.png';
 import { detectLocalModels } from '../lib/services/localModelDetector';
@@ -8,7 +8,8 @@ interface HeaderProps {
   activeTab: TabKey;
   onOpenMobileSidebar: () => void;
   isDarkMode: boolean;
-  onToggleTheme: () => void;
+  /** Operator flag: technical model-status pill shows for admins only. */
+  isAdmin?: boolean;
   onOpenSkeletonModal: () => void;
   hasAnalyzedTender: boolean;
   companyName: string;
@@ -20,7 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   onOpenMobileSidebar,
   isDarkMode,
-  onToggleTheme,
+  isAdmin = false,
   onOpenSkeletonModal,
   hasAnalyzedTender,
   companyName,
@@ -130,7 +131,8 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right: Clean, unclouded status & action controls */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
 
-        {/* Local Model & Automatic Failover Indicator Pill */}
+        {/* Local model status pill (operator-only) */}
+        {isAdmin && (
         <div className="relative">
           <button
             onClick={() => setIsModelModalOpen(!isModelModalOpen)}
@@ -213,6 +215,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
+        )}
 
         {/* Subtle POPIA Indicator (Desktop) */}
         <div className={`hidden md:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
@@ -231,19 +234,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Bid Skeleton (.doc)</span>
           </button>
         )}
-
-        {/* Theme Toggle Button */}
-        <button
-          onClick={onToggleTheme}
-          aria-label={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}
-          className={`p-1.5 sm:p-2 rounded-lg border transition-colors shrink-0 ${isDarkMode
-              ? 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'
-              : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900'
-            }`}
-          title={isDarkMode ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
-        >
-          {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
-        </button>
 
         {/* User SME Badge */}
         <div className={`hidden sm:flex items-center gap-2 pl-2 border-l ${isDarkMode ? 'border-slate-800' : 'border-slate-200'

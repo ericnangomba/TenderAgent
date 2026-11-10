@@ -6,7 +6,6 @@ import {
 
 interface SettingsProps {
   isDarkMode: boolean;
-  onToggleTheme: () => void;
 }
 
 export interface IPlatformSettings {
@@ -22,7 +21,7 @@ export interface IPlatformSettings {
   sentrySampleRate: number;
 }
 
-export const Settings: React.FC<SettingsProps> = ({ isDarkMode, onToggleTheme }) => {
+export const Settings: React.FC<SettingsProps> = ({ isDarkMode }) => {
   const [settings, setSettings] = useState<IPlatformSettings>({
     aiModel: 'gemini-2.5-flash',
     temperature: 0.1,
@@ -69,20 +68,6 @@ export const Settings: React.FC<SettingsProps> = ({ isDarkMode, onToggleTheme })
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} leading-relaxed`}>
               Configure Gemma 2 and Gemini inference parameters, POPIA data protection policies, South African VAT rates, and Sentry telemetry.
             </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onToggleTheme}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                isDarkMode 
-                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' 
-                  : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              <span>{isDarkMode ? 'Switch to Light Theme' : 'Switch to Dark Theme'}</span>
-            </button>
           </div>
         </div>
       </div>

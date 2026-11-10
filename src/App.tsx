@@ -9,7 +9,10 @@ import { ProfileVault } from './components/ProfileVault';
 import { SbdFormsGuide } from './components/SbdFormsGuide';
 import { SentryTraceViewer } from './components/SentryTraceViewer';
 import { Settings } from './components/Settings';
-import { Account, AuthState } from './components/Account';
+import { Account } from './components/Account';
+import { AuthState } from './components/AuthCard';
+import { Landing } from './components/Landing';
+import { AdminDashboard } from './components/AdminDashboard';
 import { BidReadiness } from './components/BidReadiness';
 import { BidSkeletonModal } from './components/BidSkeletonModal';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
@@ -20,7 +23,8 @@ import { generateBidResponseSkeleton } from './lib/utils/skeletonGenerator';
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('analyzer');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(false); // Light theme default
+  // Light-first product: theme toggle removed by product decision (redesign).
+  const isDarkMode = false;
   const [selectedTender, setSelectedTender] = useState<ITender | null>(SAMPLE_TENDERS[0]);
   const [calculatorSystem, setCalculatorSystem] = useState<'80/20' | '90/10'>('80/20');
   const [calculatorTenderTitle, setCalculatorTenderTitle] = useState<string>('National Treasury RT57-2026-ICT');
@@ -34,7 +38,7 @@ export default function App() {
     fetch('/api/auth/me')
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
-        if (d?.success) setAuth({ tenantId: d.tenantId, email: d.email });
+        if (d?.success) setAuth({ tenantId: d.tenantId, email: d.email, userId: d.userId, isAdmin: Boolean(d.isAdmin) });
       })
       .catch(() => undefined);
   }, []);
@@ -119,9 +123,11 @@ export default function App() {
     setActiveTab('calculator');
   };
 
-  const toggleTheme = () => {
-    setIsDarkMode(prev => !prev);
-  };
+  // Signed-out visitors see the public landing page only. The customer
+  // dashboard and all operator tooling stay behind a live session.
+  if (!auth) {
+    return <Landing onAuthChange={handleAuthChange} />;
+  }
 
   return (
     <div className={`min-h-screen flex ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} antialiased font-sans selection:bg-emerald-200 selection:text-emerald-900`}>
@@ -133,8 +139,8 @@ export default function App() {
         isOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         isDarkMode={isDarkMode}
-        onToggleTheme={toggleTheme}
         userProfile={userProfile}
+        isAdmin={Boolean(auth?.isAdmin)}
         isSampleProfile={!auth}
       />
 
@@ -146,8 +152,8 @@ export default function App() {
           activeTab={activeTab}
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           isDarkMode={isDarkMode}
-          onToggleTheme={toggleTheme}
-          onOpenSkeletonModal={() => handleOpenSkeleton(activeSkeleton || undefined)}
+          isAdmin={Boolean(auth?.isAdmin)}
+            onOpenSkeletonModal={() => handleOpenSkeleton(activeSkeleton || undefined)}
           hasAnalyzedTender={Boolean(selectedTender)}
           companyName={userProfile.companyName}
           taxPinOnFile={Boolean(userProfile.taxComplianceStatusPin)}
@@ -173,7 +179,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'finetuning' && (
+          {activeTab === 'finetuning' && auth?.isAdmin && (
             <FineTuningStudio
               isDarkMode={isDarkMode}
             />
@@ -210,20 +216,22 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'tracing' && (
+          {activeTab === 'tracing' && auth?.isAdmin && (
             <SentryTraceViewer
               recentSpans={recentSpans}
               isDarkMode={isDarkMode}
             />
           )}
 
-          {activeTab === 'settings' && (
+          {activeTab === 'settings' && auth?.isAdmin && (
             <Settings
               isDarkMode={isDarkMode}
-              onToggleTheme={toggleTheme}
             />
           )}
 
+          {activeTab === 'admin' && auth?.isAdmin && (
+            <AdminDashboard />
+          )}
           {activeTab === 'account' && (
             <Account
               isDarkMode={isDarkMode}

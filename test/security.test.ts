@@ -5,7 +5,7 @@
  *   2. /api/analyze ignores caller-supplied llmConfig (SSRF + key-leak vector)
  *   3. /api/models/detect only probes loopback endpoints
  *   4. anonymous /api/tenders never includes tenant-tagged records
- *   5. mutators (profile, finetune/*) require an account in EVERY mode
+ *   5. profile mutators require an account, finetune/model endpoints are operator-only, in EVERY mode
  *   6. paid cloud AI (Gemini) is never called for non-subscribers, even with a key set
  *   7. usage units are released when the paid resource was not actually consumed
  *   8. /api/health carries no compliance/runtime claims
@@ -91,28 +91,25 @@ test('health carries no compliance claims or hardcoded availability', async () =
   assert.ok(!body.includes('"openLlmAvailable":true'), body);
 });
 
-test('models/active: anonymous 401, never echoes server key, ignores baseUrl/apiKey fields', async () => {
+test('models/active: operator-only - anonymous 401, signed-in non-admin 403, denial echoes nothing', async () => {
   const anon = await fetch(`${demo.baseUrl}/api/models/active`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ modelId: 'gemma2-local' }),
   });
   assert.equal(anon.status, 401);
 
+  // Model switching is a platform tweak, so it sits behind requireAdmin now.
+  // A plain signed-in customer must be refused - and the refusal must not
+  // echo the server key or any caller-supplied fields either.
   const { cookie } = await signup(demo.baseUrl, 'models@example.com');
   const res = await fetch(`${demo.baseUrl}/api/models/active`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
     body: JSON.stringify({ modelId: 'gemma2-local', baseUrl: 'http://attacker.invalid/v1', apiKey: 'injected' }),
   });
-  assert.equal(res.status, 200);
+  assert.equal(res.status, 403, 'model switching is an operator action');
   const text = await res.text();
   assert.ok(!text.includes(FAKE_GEMINI_KEY), 'server key leaked in response');
   assert.ok(!text.includes('attacker.invalid'), 'caller baseUrl accepted');
   assert.ok(!text.includes('injected'), 'caller apiKey accepted');
-
-  const bad = await fetch(`${demo.baseUrl}/api/models/active`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
-    body: JSON.stringify({ modelId: 'not-a-real-model' }),
-  });
-  assert.equal(bad.status, 400);
 });
 
 test('analyze: caller-supplied llmConfig.baseUrl receives NO request and NO key (SSRF)', async () => {
@@ -154,17 +151,13 @@ test('analyze: paid cloud AI is skipped for non-subscribers even with a server k
   assert.ok((data.traceLogs || []).some((l: string) => l.includes('paid AI credits')), 'policy log missing');
 });
 
-test('models/detect: account-gated in every mode, non-loopback endpoint rejected (SSRF probe)', async () => {
+test('models/detect: operator-only in every mode (SSRF probe surface closed to customers)', async () => {
   const anon = await fetch(`${demo.baseUrl}/api/models/detect`);
   assert.equal(anon.status, 401, 'anonymous callers must not probe host model runners');
 
   const { cookie } = await signup(demo.baseUrl, 'detect@example.com');
-  const bad = await fetch(`${demo.baseUrl}/api/models/detect?endpoint=http://169.254.169.254/latest/meta-data`, { headers: { cookie } });
-  assert.equal(bad.status, 400);
-  const ok = await fetch(`${demo.baseUrl}/api/models/detect?endpoint=http://localhost:1`, { headers: { cookie } });
-  assert.equal(ok.status, 200);
-  const body = await ok.json();
-  assert.equal(body.autoFailoverToCloud, undefined, 'hardcoded failover claim still present');
+  const denied = await fetch(`${demo.baseUrl}/api/models/detect?endpoint=http://169.254.169.254/latest/meta-data`, { headers: { cookie } });
+  assert.equal(denied.status, 403, 'host model probing is an operator action');
 });
 
 test('demo mode: subscriber Gemini allowance metered exactly once per analysis', async () => {
@@ -205,7 +198,8 @@ test('tenders: anonymous and other tenants never see tenant-tagged records', asy
   assert.ok(aList.includes('ZXQMARK'), 'own record missing');
 });
 
-test('finetune mutators require an account in every mode', async () => {
+test('finetune endpoints are operator-only in every mode', async () => {
+  const { cookie } = await signup(demo.baseUrl, 'ft-boundary@example.com');
   for (const [path, body] of [
     ['/api/finetune/datasets', { name: 'x' }],
     ['/api/finetune/datasets/generate-from-tenders', {}],
@@ -216,10 +210,14 @@ test('finetune mutators require an account in every mode', async () => {
     const res = await fetch(`${demo.baseUrl}${path}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
-    assert.equal(res.status, 401, `${path} should require auth`);
+    assert.equal(res.status, 401, `${path} should reject anonymous callers`);
+    const denied = await fetch(`${demo.baseUrl}${path}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify(body),
+    });
+    assert.equal(denied.status, 403, `${path} should reject non-operator accounts`);
   }
-  const ds = await (await fetch(`${demo.baseUrl}/api/finetune/datasets`)).json();
-  assert.ok(ds.datasets.every((d: any) => !d.tenantId), 'anonymous dataset list leaked tenant data');
+  const ds = await fetch(`${demo.baseUrl}/api/finetune/datasets`);
+  assert.equal(ds.status, 401, 'anonymous dataset list is closed entirely');
 });
 
 // ---------- Guarded mode (AUTH_REQUIRED=true) ----------

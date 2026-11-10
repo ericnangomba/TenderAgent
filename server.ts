@@ -68,6 +68,8 @@ app.use(foundation.originCheckMiddleware);
 app.use(foundation.sessionMiddleware);
 app.use(foundation.guardMiddleware);
 app.use('/api', foundation.router);
+// Operator surface: read-only aggregate admin endpoints (requireAdmin enforced inside).
+app.use('/api/admin', foundation.adminRouter);
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Persistent memory storage for user company profile (POPIA sandboxed)
@@ -429,7 +431,7 @@ app.get('/api/models', (req: Request, res: Response) => {
 // Requires a signed-in account in every mode: even loopback-only, an
 // anonymous probe endpoint would let the public internet map which model
 // runners and ports are live on this host.
-app.get('/api/models/detect', foundation.requireAuth, async (req: Request, res: Response) => {
+app.get('/api/models/detect', foundation.requireAdmin, async (req: Request, res: Response) => {
   try {
     const customEndpoint = typeof req.query.endpoint === 'string' ? req.query.endpoint : undefined;
     // SSRF guard: model detection may only probe loopback runners on this
@@ -465,7 +467,7 @@ app.get('/api/models/detect', foundation.requireAuth, async (req: Request, res: 
 // version of this route accepted provider/baseUrl/apiKey from the request body
 // and echoed the full config - including the server's paid API key - back to
 // anyone. baseUrl and apiKey are never accepted from clients now.
-app.post('/api/models/active', foundation.requireAuth, async (req: Request, res: Response) => {
+app.post('/api/models/active', foundation.requireAdmin, async (req: Request, res: Response) => {
   try {
     const { modelId } = req.body || {};
     if (typeof modelId !== 'string' || !modelId) {
@@ -580,12 +582,12 @@ app.post('/api/analyze', heavyOpLimiter, async (req: Request, res: Response) => 
 
 // Datasets. Curated samples are public read; anything a user creates belongs
 // to their tenant and requires an account in every mode.
-app.get('/api/finetune/datasets', (req: Request, res: Response) => {
+app.get('/api/finetune/datasets', foundation.requireAdmin, (req: Request, res: Response) => {
   const visible = inMemoryDatasets.filter(d => !d.tenantId || (req.auth && d.tenantId === req.auth.tenantId));
   res.json({ success: true, datasets: visible });
 });
 
-app.post('/api/finetune/datasets', foundation.requireAuth, (req: Request, res: Response) => {
+app.post('/api/finetune/datasets', foundation.requireAdmin, (req: Request, res: Response) => {
   try {
     const { name, description, category, examples, format } = req.body;
     const newDs: IFineTuningDataset = {
@@ -609,7 +611,7 @@ app.post('/api/finetune/datasets', foundation.requireAuth, (req: Request, res: R
 });
 
 // Auto-synthesize dataset pairs from active tenders
-app.post('/api/finetune/datasets/generate-from-tenders', foundation.requireAuth, (req: Request, res: Response) => {
+app.post('/api/finetune/datasets/generate-from-tenders', foundation.requireAdmin, (req: Request, res: Response) => {
   try {
     // Only this tenant's own records plus the public sample feed.
     const tenders = Array.from(inMemoryTenderStore.values())
@@ -659,7 +661,7 @@ app.post('/api/finetune/datasets/generate-from-tenders', foundation.requireAuth,
 });
 
 // Fine-Tuning Jobs. Sample jobs are public read; a tenant's jobs are private.
-app.get('/api/finetune/jobs', (req: Request, res: Response) => {
+app.get('/api/finetune/jobs', foundation.requireAdmin, (req: Request, res: Response) => {
   const visible = inMemoryJobs.filter(j => !j.tenantId || (req.auth && j.tenantId === req.auth.tenantId));
   res.json({ success: true, jobs: visible });
 });
@@ -667,7 +669,7 @@ app.get('/api/finetune/jobs', (req: Request, res: Response) => {
 // Start Fine-Tuning Pipeline. NOTE: this is a SIMULATED training run for the
 // studio preview - it performs no GPU execution and produces no adapter
 // artifact. Real training runs from the exported Python script.
-app.post('/api/finetune/start', foundation.requireAuth, (req: Request, res: Response) => {
+app.post('/api/finetune/start', foundation.requireAdmin, (req: Request, res: Response) => {
   try {
     const { baseModel, datasetId, loraRank, loraAlpha, epochs, learningRate } = req.body;
     const dataset = inMemoryDatasets.find(d => d.id === datasetId && (!d.tenantId || d.tenantId === req.auth!.tenantId)) || inMemoryDatasets[0];
@@ -761,12 +763,12 @@ const deployHandler = (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
-app.post('/api/finetune/deploy', foundation.requireAuth, deployHandler);
-app.post('/api/finetune/deploy/:jobId', foundation.requireAuth, deployHandler);
+app.post('/api/finetune/deploy', foundation.requireAdmin, deployHandler);
+app.post('/api/finetune/deploy/:jobId', foundation.requireAdmin, deployHandler);
 
 // Side-by-side evaluator. Both outputs are FIXED ILLUSTRATIVE EXAMPLES, not
 // live model inference - labelled as such in the response.
-app.post('/api/finetune/compare', foundation.requireAuth, async (req: Request, res: Response) => {
+app.post('/api/finetune/compare', foundation.requireAdmin, async (req: Request, res: Response) => {
   try {
     const { prompt } = req.body;
     const testPrompt = prompt || 'What are the mandatory returnables and PPPFA formula for Drakenstein Municipality basic services tender?';
@@ -805,7 +807,7 @@ app.post('/api/finetune/compare', foundation.requireAuth, async (req: Request, r
 });
 
 // Standalone Python GPU Training Script Export
-app.get('/api/finetune/export-script', (req: Request, res: Response) => {
+app.get('/api/finetune/export-script', foundation.requireAdmin, (req: Request, res: Response) => {
   const pythonScript = `# ==============================================================================
 # TenderAgent South Africa - Llama 3.1 8B / Gemma 2 LoRA Fine-Tuning Pipeline
 # Optimized for Unsloth / Hugging Face PEFT on NVIDIA GPUs (RTX 3090/4090, A100, H100)

@@ -33,6 +33,7 @@ export async function startTestApp(configOverrides: Partial<FoundationConfig> = 
   app.use(foundation.sessionMiddleware);
   app.use(foundation.guardMiddleware);
   app.use('/api', foundation.router);
+  app.use('/api/admin', foundation.adminRouter);
 
   // Stub the LLM route (never call paid models in tests); use the REAL scrape
   // handler so the SerpApi fixture/spend rules are exercised end to end.
@@ -56,7 +57,7 @@ export function stopTestApp(t: TestApp): Promise<void> {
 }
 
 /** Signs up a fresh tenant and returns its session cookie + tenantId. */
-export async function signup(baseUrl: string, email: string, password = 'correct horse 9'): Promise<{ cookie: string; tenantId: string }> {
+export async function signup(baseUrl: string, email: string, password = 'correct horse 9'): Promise<{ cookie: string; tenantId: string; userId: string }> {
   const res = await fetch(`${baseUrl}/api/auth/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -66,7 +67,7 @@ export async function signup(baseUrl: string, email: string, password = 'correct
   const setCookie = res.headers.get('set-cookie') || '';
   const cookie = setCookie.split(';')[0];
   const body = await res.json();
-  return { cookie, tenantId: body.tenantId };
+  return { cookie, tenantId: body.tenantId, userId: body.userId };
 }
 
 export function signWebhook(payload: object): { body: string; signature: string } {

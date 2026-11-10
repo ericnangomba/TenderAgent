@@ -93,5 +93,22 @@ export function createMemoryRepos(): FoundationRepos {
       },
       async put(a) { applications.set(`${a.tenantId}:${a.id}`, clone(a)); },
     },
+    stats: {
+      async overview(periodKey) {
+        const entitlementsByStatus: Record<string, number> = {};
+        for (const e of entitlements.values()) {
+          const key = e.status || 'none';
+          entitlementsByStatus[key] = (entitlementsByStatus[key] || 0) + 1;
+        }
+        let analyses = 0;
+        let serpapiLookups = 0;
+        for (const c of usage.values()) {
+          if (c.periodKey !== periodKey) continue;
+          analyses += c.analyses;
+          serpapiLookups += c.serpapiLookups;
+        }
+        return { tenants: tenants.size, users: usersById.size, entitlementsByStatus, usage: { analyses, serpapiLookups } };
+      },
+    },
   };
 }

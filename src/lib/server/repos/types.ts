@@ -134,4 +134,21 @@ export interface FoundationRepos {
     listByTenant(tenantId: string): Promise<BidApplication[]>;
     put(a: BidApplication): Promise<void>;
   };
+  /**
+   * Aggregate-only operator statistics for the admin overview. Counts and
+   * totals, never per-tenant rows: the admin surface must not become a PII
+   * listing channel.
+   */
+  stats: {
+    overview(periodKey: string): Promise<AdminOverview>;
+  };
+}
+
+export interface AdminOverview {
+  tenants: number;
+  users: number;
+  /** Entitlement counts keyed by status ('none' = no entitlement row). */
+  entitlementsByStatus: Record<string, number>;
+  /** Consumed units across all tenants for the given period. */
+  usage: { analyses: number; serpapiLookups: number };
 }

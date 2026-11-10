@@ -64,6 +64,16 @@ export interface FoundationConfig {
   postgresUri: string;
   /** Mark the session cookie Secure (set true once the app is served over HTTPS). */
   cookieSecure: boolean;
+  /**
+   * Server-generated user IDs with operator (admin) access, from ADMIN_USER_IDS
+   * (comma-separated). IDs are used instead of emails because signup email is
+   * self-asserted and unverified: an email allowlist would let a stranger claim
+   * an admin's address by registering it first. Empty (default) means NO admin
+   * exists - no first user, test account or bootstrap path gets privilege
+   * implicitly. The operator copies their own user ID from the Account screen
+   * into the deployment environment to grant access.
+   */
+  adminUserIds: string[];
 }
 
 /** Hard rules that must hold before the server may accept traffic. */
@@ -104,5 +114,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FoundationConf
     postgresUri: env.DATABASE_URL || '',
     cookieSecure: env.COOKIE_SECURE === 'true',
     trustProxy: env.TRUST_PROXY === undefined ? false : (env.TRUST_PROXY === 'false' ? false : env.TRUST_PROXY || true),
+    adminUserIds: (env.ADMIN_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean),
   };
 }

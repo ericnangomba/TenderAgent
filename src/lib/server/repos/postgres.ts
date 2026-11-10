@@ -356,5 +356,34 @@ export function createPostgresRepos(pool: PoolLike): FoundationRepos {
         );
       },
     },
+    stats: {
+      async overview(periodKey: string) {
+        const counts = await pool.query(
+          `SELECT (SELECT count(*)::int FROM foundation_tenants) AS tenants,
+                  (SELECT count(*)::int FROM foundation_users) AS users`,
+        );
+        const ent = await pool.query(
+          `SELECT coalesce(status, 'none') AS status, count(*)::int AS n
+           FROM foundation_entitlements GROUP BY 1`,
+        );
+        const usageRows = await pool.query(
+          `SELECT coalesce(sum(analyses), 0)::int AS analyses,
+                  coalesce(sum(serpapi_lookups), 0)::int AS serpapi_lookups
+           FROM foundation_usage_counters WHERE period_key = $1`,
+          [periodKey],
+        );
+        const entitlementsByStatus: Record<string, number> = {};
+        for (const row of ent.rows) entitlementsByStatus[row.status] = row.n;
+        return {
+          tenants: counts.rows[0].tenants,
+          users: counts.rows[0].users,
+          entitlementsByStatus,
+          usage: {
+            analyses: usageRows.rows[0].analyses,
+            serpapiLookups: usageRows.rows[0].serpapi_lookups,
+          },
+        };
+      },
+    },
   };
 }

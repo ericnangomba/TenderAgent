@@ -51,6 +51,15 @@ export interface Foundation {
   releaseConsumption: (req: Request, action: GatedAction) => Promise<void>;
   /** Require a signed-in account in EVERY mode (not only AUTH_REQUIRED). */
   requireAuth: (req: Request, res: Response, next: NextFunction) => void;
+  /**
+   * Require an operator account (user ID in ADMIN_USER_IDS). 401 signed-out,
+   * 403 non-admin. Gates technical/platform surfaces server-side.
+   */
+  requireAdmin: (req: Request, res: Response, next: NextFunction) => void;
+  /** True when this request's account is an operator. */
+  isAdmin: (req: Request) => boolean;
+  /** /api/admin/* read-only operator endpoints (requireAdmin applied inside). */
+  adminRouter: Router;
 }
 
 /** Marker for units the guard/access helpers consumed on behalf of a request. */
@@ -177,6 +186,40 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     }
     next();
   };
+
+  /**
+   * Operator gate for technical/platform surfaces. Membership comes from
+   * server-generated user IDs in ADMIN_USER_IDS (operator-set in the
+   * deployment environment), never from self-asserted emails. Default empty:
+   * no account has admin access until the operator explicitly grants it.
+   */
+  const requireAdmin = (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.auth) {
+      res.status(401).json({ success: false, error: 'authentication_required' });
+      return;
+    }
+    if (!config.adminUserIds.includes(req.auth.userId)) {
+      res.status(403).json({ success: false, error: 'admin_required' });
+      return;
+    }
+    next();
+  };
+
+  const isAdmin = (req: Request): boolean =>
+    Boolean(req.auth) && config.adminUserIds.includes(req.auth!.userId);
+
+  // Read-only, aggregate-only operator overview. No per-tenant rows, no
+  // emails, no secrets: counts and usage totals are sufficient for the
+  // settings/performance surface Eric asked for.
+  const adminRouter = Router();
+  adminRouter.get('/overview', requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const overview = await repos.stats.overview(currentPeriodKey(new Date()));
+      res.json({ success: true, overview });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 
   const accountRouter = Router();
   accountRouter.get('/account', async (req: Request, res: Response) => {
@@ -397,5 +440,5 @@ function applyReadyInvariant(app: BidApplication): void {
     }
   };
 
-  return { config, repos, originCheckMiddleware, sessionMiddleware, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, router, webhookRouter };
+  return { config, repos, originCheckMiddleware, sessionMiddleware, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
 }
