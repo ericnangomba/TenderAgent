@@ -27,7 +27,24 @@ app.use(foundation.sessionMiddleware);
 app.use(foundation.guardMiddleware);
 app.use('/api', foundation.router);
 app.use('/api/admin', foundation.adminRouter);
-app.post('/api/analyze', (_req, res) => res.json({ success: true, stub: 'analyze' }));
+// QA: run the REAL pipeline on the statutory (offline) engine - no network,
+// no paid credits - so analyzer pixels verify actual extraction behavior.
+app.post('/api/analyze', async (req, res) => {
+  try {
+    const { executeRfpPipeline } = await import('../src/lib/agents/mastraEngine');
+    const { rawText, referenceId, companyProfile } = req.body || {};
+    const r = await executeRfpPipeline({
+      rawText: String(rawText || ''),
+      referenceId: String(referenceId || 'QA-REF'),
+      companyProfile,
+      llmConfig: { provider: 'statutory', modelId: 'gemma2-local' },
+      allowCloudLlm: false,
+    });
+    res.json({ success: true, tender: r.record, skeleton: r.skeleton, traceLogs: r.traceLogs, spans: r.spans });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 app.get('/api/scrape', (_req, res) => res.json({ success: true, tenders: [], source: 'qa-stub' }));
 app.post('/api/parse-document', (_req, res) => res.json({ success: true, stub: 'parse' }));
 
@@ -73,7 +90,7 @@ const server: Server = await new Promise((resolve) => {
 const { port } = server.address() as AddressInfo;
 const base = `http://127.0.0.1:${port}`;
 
-async function signup(email: string): Promise<{ cookie: string; userId: string }> {
+async function signup(email: string): Promise<{ cookie: string; userId: string; tenantId: string }> {
   const r = await fetch(`${base}/api/auth/signup`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -82,10 +99,19 @@ async function signup(email: string): Promise<{ cookie: string; userId: string }
   const body: any = await r.json();
   if (!body.success) throw new Error(`signup failed: ${JSON.stringify(body)}`);
   const cookie = (r.headers.get('set-cookie') || '').split(';')[0];
-  return { cookie, userId: body.userId };
+  return { cookie, userId: body.userId, tenantId: body.tenantId };
 }
 
 const customer = await signup('customer.qa@example.co.za');
+
+// QA: activate a subscription directly through the entitlement pipeline so the
+// guarded /api/analyze route runs for the pixel pass (billing stays mock).
+const { applyBillingEvent } = await import('../src/lib/server/entitlement');
+await applyBillingEvent(repos, {
+  eventId: 'qa-evt-activate', provider: 'mock', type: 'subscription.activated',
+  tenantId: customer.tenantId, planId: 'standard_monthly', subscriptionRef: 'qa-sub',
+  periodEnd: new Date(Date.now() + 30 * 24 * 3600 * 1000), occurredAt: new Date(),
+}, new Date());
 const admin = await signup('operator.qa@example.co.za');
 config.adminUserIds.push(admin.userId); // live-array grant for QA pixels only
 

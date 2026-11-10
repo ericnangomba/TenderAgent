@@ -128,6 +128,7 @@ Output strictly a valid JSON object with NO markdown code fences and NO explanat
     "subcontracting30Percent": false,
     "additionalDocuments": ["SBD 4", "SBD 6.1", "COIDA Good Standing", "CIDB Certificate"]
   },
+Set each checklist boolean true ONLY when the tender text itself lists that item as a requirement; otherwise false. Never infer a statutory obligation that the text does not state.
   "points": "80/20" or "90/10",
   "technicalThreshold": 75
 }
@@ -348,7 +349,7 @@ ${rawText.slice(0, 10000)}`;
       issuingDepartment: department,
       closingDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       cidbGrading: cidbGrading || null,
-      estimatedBudget: points === '90/10' ? 'R 55,000,000.00+ (ZAR)' : 'R 18,500,000.00 (ZAR)',
+      estimatedBudget: 'Not Specified',
       province,
       category,
       checklist: {
@@ -359,13 +360,15 @@ ${rawText.slice(0, 10000)}`;
         compulsoryBriefing: briefingMatch,
         subcontracting30Percent: subcontractMatch,
         additionalDocuments: [
-          'SBD 1: Invitation to Bid Document',
-          'SBD 4: Standard Bidding Declaration of Interest',
-          'SBD 6.1: Preference Points Claim Form under Preferential Procurement Regs 2022',
+          // Only documents the tender text itself calls for - the tender's own
+          // returnables list governs; nothing is asserted from general rules.
+          ...(/\bSBD\s*1\b/i.test(rawText) ? ['SBD 1: Invitation to Bid Document'] : []),
+          ...(/\bSBD\s*4\b/i.test(rawText) ? ['SBD 4: Standard Bidding Declaration of Interest'] : []),
+          ...(/\bSBD\s*6\.1\b/i.test(rawText) ? ['SBD 6.1: Preference Points Claim Form under Preferential Procurement Regs 2022'] : []),
           ...(cidbGrading ? [`CIDB Proof of Registration with Active Grading ${cidbGrading}`] : []),
           ...(coidaMatch ? ['COIDA Valid Letter of Good Standing (Compensation Commissioner / FEM)'] : []),
-          'Certified Copy of CIPC Company Registration Documents',
-          'Certified Identity Documents of all active Directors/Members'
+          ...(/\bCIPC\b/i.test(rawText) ? ['Certified Copy of CIPC Company Registration Documents'] : []),
+          ...(/identity documents|certified id/i.test(rawText) ? ['Certified Identity Documents of Directors/Members as stated'] : [])
         ]
       },
       points,
@@ -484,12 +487,12 @@ export async function executeRfpPipeline({
 
   // Statutory Compliance Check Step
   const complianceSpan = createSpan('South African Regulatory Checklist Evaluation', 'compliance.evaluate', 'Validating CSD, SARS, B-BBEE, CIDB, COIDA');
-  addTrace(`[Compliance Engine] Verifying mandatory returnables: CSD (${extractedData.checklist?.csd ? 'Mandatory' : 'Optional'}), SARS PIN (${extractedData.checklist?.sars ? 'Mandatory' : 'Optional'}), B-BBEE (${extractedData.checklist?.bbbee ? 'Mandatory' : 'Optional'}), CIDB (${extractedData.cidbGrading || 'N/A'}).`);
+  addTrace(`[Compliance Engine] Returnables found in the tender text: CSD (${extractedData.checklist?.csd ? 'listed' : 'not found in text'}), SARS PIN (${extractedData.checklist?.sars ? 'listed' : 'not found in text'}), B-BBEE (${extractedData.checklist?.bbbee ? 'listed' : 'not found in text'}), CIDB (${extractedData.cidbGrading || 'not found in text'}). Confirm against the tender's own returnables list.`);
   await new Promise(r => setTimeout(r, 40));
   finalizeSpan(complianceSpan, 'success', {
-    csdRequired: extractedData.checklist?.csd ?? true,
-    sarsRequired: extractedData.checklist?.sars ?? true,
-    bbbeeRequired: extractedData.checklist?.bbbee ?? true,
+    csdRequired: extractedData.checklist?.csd ?? false,
+    sarsRequired: extractedData.checklist?.sars ?? false,
+    bbbeeRequired: extractedData.checklist?.bbbee ?? false,
     cidbGrading: extractedData.cidbGrading || null
   });
 
@@ -504,13 +507,13 @@ export async function executeRfpPipeline({
     issuingDepartment: extractedData.issuingDepartment || 'Organ of State',
     closingDate: new Date(extractedData.closingDate || Date.now() + 21 * 24 * 60 * 60 * 1000),
     cidbGradingRequired: extractedData.cidbGrading,
-    estimatedBudget: extractedData.estimatedBudget || 'R 15,000,000.00 (ZAR)',
+    estimatedBudget: extractedData.estimatedBudget || 'Not Specified',
     province: extractedData.province || 'National / South Africa',
     category: extractedData.category || 'ICT & Technology',
     extractedComplianceChecklist: {
-      csdRequired: extractedData.checklist?.csd ?? true,
-      sarsPinRequired: extractedData.checklist?.sars ?? true,
-      bbbeeRequired: extractedData.checklist?.bbbee ?? true,
+      csdRequired: extractedData.checklist?.csd ?? false,
+      sarsPinRequired: extractedData.checklist?.sars ?? false,
+      bbbeeRequired: extractedData.checklist?.bbbee ?? false,
       coidaRequired: extractedData.checklist?.coida ?? false,
       compulsoryBriefing: extractedData.checklist?.compulsoryBriefing ?? false,
       subcontracting30Percent: extractedData.checklist?.subcontracting30Percent ?? false,
@@ -554,7 +557,7 @@ export async function executeRfpPipeline({
   finalizeSpan(rootSpan, 'success', {
     totalDurationMs: Date.now() - startTime,
     referenceNumber: savedRecord.referenceNumber,
-    complianceScore: '100% Parsed'
+    complianceScore: "Extraction complete - confirm requirements against the tender\u2019s own returnables list"
   });
   addTrace(`[Sentry Trace] Finalizing transaction loop. Generated structured bid skeleton (.docx ready). Total execution latency: ${Date.now() - startTime}ms.`);
 

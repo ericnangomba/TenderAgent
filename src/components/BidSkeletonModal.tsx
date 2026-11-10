@@ -90,7 +90,7 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
     </tbody>
   </table>
 
-  <h2>Mandatory Statutory Returnable Schedules</h2>
+  <h2>Returnable Schedules (confirm against this tender's list)</h2>
   <ul>
     ${skeleton.recommendedSbdForms.map(form => `<li>${form}</li>`).join('')}
   </ul>

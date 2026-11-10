@@ -1,4 +1,7 @@
 export interface IComplianceChecklist {
+  /** Semantics: true means THIS tender's text lists the item as a requirement.
+   *  false means "not found in this tender's text" - it never asserts the item
+   *  is unnecessary; the tender's own returnables list governs. */
   csdRequired: boolean;
   sarsPinRequired: boolean;
   bbbeeRequired: boolean;

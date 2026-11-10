@@ -3,7 +3,7 @@ import {
   Upload, FileText, CheckCircle, ShieldAlert, Layers, RefreshCw,
   ChevronRight, Building, Calendar, DollarSign, Award, CheckCircle2,
   AlertCircle, Sparkles, Terminal, FileCode, Check, ShieldCheck, FileSearch
-} from 'lucide-react';
+, MinusCircle } from 'lucide-react';
 import { SAMPLE_TENDERS } from '../lib/data/sampleTenders';
 import { ITender, IUserProfile, ISentrySpanRecord, IBidResponseSkeleton } from '../lib/types/tender';
 
@@ -263,10 +263,21 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
     }
   };
 
+  // What THIS tender's text lists. Both result shapes (live API record and
+  // sample-tender preview) are normalized here. false means "not found in
+  // this tender's text" - never proof the item is unnecessary.
+  const listed = extractedData ? {
+    csd: Boolean(extractedData.extractedComplianceChecklist?.csdRequired ?? extractedData.checklist?.csd),
+    sars: Boolean(extractedData.extractedComplianceChecklist?.sarsPinRequired ?? extractedData.checklist?.sars),
+    bbbee: Boolean(extractedData.extractedComplianceChecklist?.bbbeeRequired ?? extractedData.checklist?.bbbee),
+    coida: Boolean(extractedData.extractedComplianceChecklist?.coidaRequired ?? extractedData.checklist?.coida),
+    cidb: extractedData.cidbGradingRequired || extractedData.checklist?.cidb || null,
+  } : null;
+
   // Check SME eligibility against extracted requirements
   const isCsdOk = Boolean(userProfile.csdNumber);
   const isSarsOk = Boolean(userProfile.taxComplianceStatusPin);
-  const isBbbeeOk = Boolean(userProfile.bbbeeLevel <= 4);
+  const isBbbeeOk = Boolean(userProfile.bbbeeLevel >= 1 && userProfile.bbbeeLevel <= 4);
   const isCoidaOk = userProfile.coidaGoodStandingValid;
   const isCidbOk = !extractedData?.cidbGradingRequired || Boolean(userProfile.cidbGrading);
 
@@ -709,9 +720,9 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 <div className="flex items-center justify-between">
                   <h4 className={`font-semibold text-sm flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     <Layers className="w-4 h-4 text-emerald-600" />
-                    <span>Mandated Returnable Check</span>
+                    <span>Returnables Found in This Tender</span>
                   </h4>
-                  <span className="text-[11px] text-slate-400">Statutory Returnables</span>
+                  <span className="text-[11px] text-slate-400">From the tender text - its own returnables list governs</span>
                 </div>
 
                 <div className="space-y-2.5">
@@ -722,9 +733,15 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>CSD Registration</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Central Supplier Database (MAAA Number)</div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                      Mandatory
+                    {listed?.csd ? (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+                      Listed by tender
                     </span>
+                    ) : (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800">
+                      Not listed - check returnables
+                    </span>
+                    )}
                   </div>
 
                   {/* SARS */}
@@ -734,9 +751,15 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>SARS TCS PIN</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tax Compliance Status System PIN</div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                      Mandatory
+                    {listed?.sars ? (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+                      Listed by tender
                     </span>
+                    ) : (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800">
+                      Not listed - check returnables
+                    </span>
+                    )}
                   </div>
 
                   {/* B-BBEE */}
@@ -746,9 +769,15 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>B-BBEE Certificate / Affidavit</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Level 1-8 verification or EME affidavit</div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                      Mandatory
+                    {listed?.bbbee ? (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+                      Listed by tender
                     </span>
+                    ) : (
+<span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800">
+                      Not listed - check returnables
+                    </span>
+                    )}
                   </div>
 
                   {/* CIDB */}
@@ -758,11 +787,11 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>CIDB Grading</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Construction Industry Development Board</div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${extractedData.cidbGradingRequired || extractedData.checklist?.cidb
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${listed?.cidb
                         ? 'bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800'
                         : 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800'
                       }`}>
-                      {extractedData.cidbGradingRequired || extractedData.checklist?.cidb || 'Not Required'}
+                      {listed?.cidb || 'Not listed - check returnables'}
                     </span>
                   </div>
 
@@ -773,11 +802,11 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>COIDA Letter of Good Standing</div>
                       <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Compensation Commissioner certification</div>
                     </div>
-                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${extractedData.extractedComplianceChecklist?.coidaRequired || extractedData.checklist?.coida
+                    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${listed?.coida
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800'
                         : 'bg-slate-100 text-slate-500 border border-slate-200 dark:bg-slate-850 dark:text-slate-400 dark:border-slate-800'
                       }`}>
-                      {extractedData.extractedComplianceChecklist?.coidaRequired || extractedData.checklist?.coida ? 'Mandatory' : 'Optional'}
+                      {listed?.coida ? 'Listed by tender' : 'Not listed - check returnables'}
                     </span>
                   </div>
                 </div>
@@ -801,7 +830,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </div>
 
                   <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} leading-relaxed mb-4`}>
-                    Determined using National Treasury formula allocation instructions matching targeted financial boundaries.
+                    80/20 applies to values up to R50 million and 90/10 above it under the Preferential Procurement Regulations 2022; the tender's stated system and formula govern.
                     {(extractedData.evaluationCriteria?.preferencePointsSystem === '90/10' || String(extractedData.points).includes('90'))
                       ? ' Values estimated > R50 Million (90 Price / 10 Specific Goals).'
                       : ' Values estimated <= R50 Million (80 Price / 20 Specific Goals).'}
@@ -809,7 +838,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
                   <div className="flex items-center gap-2 p-2.5 rounded bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Meets local procurement goals & preferential scoring threshold.</span>
+                    <span>Confirm the preference-point system and specific goals stated in this tender document.</span>
                   </div>
                 </div>
 
@@ -825,23 +854,23 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
                   <div className="grid grid-cols-2 gap-2 text-[11px] mb-3">
                     <div className={`flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {isCsdOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
-                      <span>CSD: {userProfile.csdNumber || 'Missing'}</span>
+                      {!listed?.csd ? <MinusCircle className="w-3.5 h-3.5 text-slate-400" /> : isCsdOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
+                      <span>CSD: {!listed?.csd ? 'Not listed by this tender' : userProfile.csdNumber || 'Missing for a listed requirement'}</span>
                     </div>
 
                     <div className={`flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {isSarsOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
-                      <span>SARS PIN: {userProfile.taxComplianceStatusPin ? 'Active' : 'Missing'}</span>
+                      {!listed?.sars ? <MinusCircle className="w-3.5 h-3.5 text-slate-400" /> : isSarsOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-rose-500" />}
+                      <span>SARS PIN: {!listed?.sars ? 'Not listed by this tender' : userProfile.taxComplianceStatusPin ? 'On file' : 'Missing for a listed requirement'}</span>
                     </div>
 
                     <div className={`flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {isBbbeeOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
-                      <span>B-BBEE: Level {userProfile.bbbeeLevel} ({userProfile.bbbeeType})</span>
+                      {!listed?.bbbee ? <MinusCircle className="w-3.5 h-3.5 text-slate-400" /> : isBbbeeOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
+                      <span>B-BBEE: {!listed?.bbbee ? 'Not listed by this tender' : `Level ${userProfile.bbbeeLevel} (${userProfile.bbbeeType})`}</span>
                     </div>
 
                     <div className={`flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                      {isCidbOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
-                      <span>CIDB: {userProfile.cidbGrading || 'Not Required'}</span>
+                      {!listed?.cidb ? <MinusCircle className="w-3.5 h-3.5 text-slate-400" /> : isCidbOk ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500" />}
+                      <span>CIDB: {!listed?.cidb ? 'Not listed by this tender' : userProfile.cidbGrading || 'Missing for a listed requirement'}</span>
                     </div>
                   </div>
 
@@ -849,7 +878,9 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                     }`}>
                     <span>Profile fields on file:</span>
                     <span className="font-semibold text-emerald-600">
-                      {isCsdOk && isSarsOk && isCidbOk ? 'Core fields present - verify against the tender requirements' : 'Action Required'}
+                      {listed && ((listed.csd && !isCsdOk) || (listed.sars && !isSarsOk) || (listed.cidb && !isCidbOk))
+                        ? <span className="text-rose-500">A listed requirement is missing from your profile</span>
+                        : 'Nothing listed is missing - confirm the tender\u2019s returnables list'}
                     </span>
                   </div>
                 </div>

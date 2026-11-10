@@ -16,8 +16,8 @@ export const SbdFormsGuide: React.FC<SbdFormsGuideProps> = ({ isDarkMode }) => {
       code: 'SBD 1',
       title: 'Invitation to Bid & Administrative Responsiveness',
       authority: 'National Treasury Transversal Contracting',
-      mandatory: true,
-      summary: 'Part A contains bid specifications and Part B contains terms and conditions for bidding. Mandatory returnable signed by authorized company representative.',
+      returnable: true,
+      summary: 'Part A contains bid specifications and Part B contains terms and conditions for bidding. A returnable signed by an authorized company representative where the tender calls for SBD 1.',
       keyClauses: [
         'Submission confirms unconditional acceptance of General Conditions of Contract (GCC)',
         'Tax Compliance Requirement: TCS PIN or verified CSD MAAA registration',
@@ -46,7 +46,7 @@ B-BBEE STATUS LEVEL: [LEVEL PER YOUR AFFIDAVIT OR CERTIFICATE]`
       code: 'SBD 4',
       title: 'Bidder\'s Declaration of Interest (Consolidated)',
       authority: 'National Treasury SCM Instruction Note No. 03 of 2021/2022',
-      mandatory: true,
+      returnable: true,
       summary: 'Consolidates old SBD 4, SBD 8 (past SCM practices), and SBD 9 (prohibition of bid rigging) into a single strict statutory declaration.',
       keyClauses: [
         'Clause 2.1: Disclose whether any director/trustee/shareholder is employed by the organ of state',
@@ -76,7 +76,7 @@ Any person (natural or juristic) may make an offer or offers in terms of this in
       code: 'SBD 6.1',
       title: 'Preference Points Claim Form (PPR 2022)',
       authority: 'Preferential Procurement Regulations, 2022 (PPPFA)',
-      mandatory: true,
+      returnable: true,
       summary: 'Serves as a claim form for preference points for specific goals under the 80/20 or 90/10 point allocation systems.',
       keyClauses: [
         'Points for tenders equal to or below R50 Million: 80/20 Preference Point System',
@@ -104,7 +104,7 @@ Supporting Evidence Attached: Commissioner of Oaths stamped EME B-BBEE Sworn Aff
       code: 'CIDB Matrix',
       title: 'Construction Industry Development Board Grading (public sector)',
       authority: 'CIDB Act 38 of 2000',
-      mandatory: false,
+      returnable: false,
       summary: 'Specifies contractor capability limits for public sector civil and building engineering works.',
       keyClauses: [
         'Grade 1: Works up to R 500,000',
@@ -190,11 +190,11 @@ Class of Works Codes:
                   {f.code}
                 </span>
                 <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${
-                  f.mandatory 
+                  f.returnable 
                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
                     : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                 }`}>
-                  {f.mandatory ? 'Returnable' : 'Reference'}
+                  {f.returnable ? 'Commonly returnable' : 'Reference'}
                 </span>
               </div>
               <div className="text-xs font-semibold leading-tight mb-1">{f.title}</div>
@@ -327,7 +327,7 @@ Class of Works Codes:
         </div>
 
         <p className={`text-[10px] leading-relaxed ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-          Not legal advice. The tender document and the buyer's supply-chain policy always govern a specific bid.
+          Not legal advice. The tender document and the buyer's supply-chain policy govern a specific bid, within the applicable law.
         </p>
       </div>
 

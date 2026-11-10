@@ -8,19 +8,21 @@ export function generateBidResponseSkeleton(
   tenderData: any,
   companyProfile?: Partial<IUserProfile>
 ): IBidResponseSkeleton {
+  // No profile on file: the skeleton is a template with bracketed
+  // placeholders, never a fabricated bidder identity.
   const company = companyProfile || {
-    companyName: 'Apex Strategic Solutions (Pty) Ltd',
-    registrationNumber: '2023/849201/07',
-    csdNumber: 'MAAA0821945',
-    taxComplianceStatusPin: 'TCS-9482104-Z',
-    bbbeeLevel: 1,
+    companyName: '[Your registered company name]',
+    registrationNumber: '[Company registration number]',
+    csdNumber: '',
+    taxComplianceStatusPin: '',
+    bbbeeLevel: 0,
     bbbeeType: 'EME',
-    cidbGrading: '7CE PE',
-    coidaGoodStandingValid: true,
-    coidaExpiryDate: '2027-04-30',
-    contactEmail: 'tenders@apexstrategic.co.za',
-    contactPhone: '+27 (0)11 482 9200',
-    province: 'Gauteng'
+    cidbGrading: '',
+    coidaGoodStandingValid: false,
+    coidaExpiryDate: '',
+    contactEmail: '[Contact email]',
+    contactPhone: '[Contact phone]',
+    province: '[Province]'
   };
 
   const tenderRef = tenderData.referenceNumber || 'RFP-REF-2026';
@@ -32,7 +34,7 @@ export function generateBidResponseSkeleton(
     tenderReference: tenderRef,
     tenderTitle: tenderTitle,
     issuingDepartment: dept,
-    closingDate: String(tenderData.closingDate || '2026-11-30'),
+    closingDate: tenderData.closingDate ? String(tenderData.closingDate) : 'Confirm in the tender document',
     bidderProfile: company,
     sections: [
       {
@@ -79,16 +81,16 @@ Our commercial model has been calculated strictly inclusive of 15% Value Added T
 Under the ${points} evaluation framework:
 - Price Allocation: ${String(points).includes('90') ? '90 Points' : '80 Points'}
 - Specific Goals (B-BBEE Level ${company.bbbeeLevel}): ${String(points).includes('90') ? '10 Points (Maximum Allocation)' : '20 Points (Maximum Allocation)'}
-Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.`
+Your final score is computed by the organ of state from all received bids under the ${points} formula; this template does not estimate it.`
       },
       {
-        title: 'Section 4: Mandatory Returnable Schedules & Annexures',
-        description: 'Index of all statutory schedules ready for submission binding.',
-        content: `The following bound annexures accompany this tender envelope:
+        title: 'Section 4: Returnable Schedules & Annexures',
+        description: 'Index of returnable schedules - include only those this tender lists.',
+        content: `The tender's own returnables list governs which annexures are required. The list below is a common starting set - include only what this tender calls for:
 - Annexure A: Completed & Signed SBD 1 (Invitation to Bid)
 - Annexure B: Completed & Commissioner-stamped SBD 4 (Declaration of Interest)
 - Annexure C: Completed SBD 6.1 (Preference Points Claim under PPR 2022)
-- Annexure D: Full CSD Master Registration Summary Report (Tax Status Verified)
+- Annexure D: Full CSD Master Registration Summary Report
 - Annexure E: SANAS-Accredited B-BBEE Certificate / Commissioner Sworn Affidavit
 - Annexure F: Valid COIDA Letter of Good Standing
 - Annexure G: Audited Financial Statements (Last 2 Fiscal Years)
@@ -126,7 +128,7 @@ Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.
       },
       {
         item: 'SBD 4 Declaration of Interest',
-        requirement: 'Mandatory declaration of any state employment ties',
+        requirement: 'Declaration of any state employment ties, where this tender calls for SBD 4',
         smeStatus: 'To complete and sign',
         compliant: false,
         referenceDocument: 'SBD 4 Original Signed'
@@ -140,10 +142,10 @@ Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.
       }
     ],
     priceScheduleFramework: [
-      { item: 'Phase 1: Project Mobilization, Site Risk & Statutory Setup', unit: 'Sum', quantity: 1, estimatedRate: 'R 285,000.00', notes: 'Includes safety plan, SCM compliance, and initial site coordination.' },
-      { item: 'Phase 2: Core Engineering, Supply & Implementation Works', unit: 'Monthly', quantity: 6, estimatedRate: 'R 940,000.00', notes: 'Direct deliverables, accredited specialist labor, and materials.' },
-      { item: 'Phase 3: System Testing, Verification & Client SLA Support', unit: 'Quarterly', quantity: 4, estimatedRate: 'R 125,000.00', notes: 'Post-delivery technical support and preventative maintenance.' },
-      { item: 'Contingency Provision (Statutory Municipal Clause)', unit: 'Sum', quantity: 1, estimatedRate: 'R 150,000.00', notes: 'Subject to prior written client sign-off.' }
+      { item: 'Phase 1: Project Mobilization, Site Risk & Statutory Setup', unit: 'Sum', quantity: 1, estimatedRate: 'To be costed', notes: 'Includes safety plan, SCM compliance, and initial site coordination.' },
+      { item: 'Phase 2: Core Engineering, Supply & Implementation Works', unit: 'Monthly', quantity: 6, estimatedRate: 'To be costed', notes: 'Direct deliverables, accredited specialist labor, and materials.' },
+      { item: 'Phase 3: System Testing, Verification & Client SLA Support', unit: 'Quarterly', quantity: 4, estimatedRate: 'To be costed', notes: 'Post-delivery technical support and preventative maintenance.' },
+      { item: 'Contingency Provision (if the tender allows one)', unit: 'Sum', quantity: 1, estimatedRate: 'To be costed', notes: 'Subject to prior written client sign-off.' }
     ],
     recommendedSbdForms: [
       'SBD 1: Invitation to Bid',
