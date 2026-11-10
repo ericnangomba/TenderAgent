@@ -16,6 +16,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { BidReadiness } from './components/BidReadiness';
 import { BidSkeletonModal } from './components/BidSkeletonModal';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
+import { SwUpdatePrompt } from './components/SwUpdatePrompt';
 import { IUserProfile, ITender, IBidResponseSkeleton, ISentrySpanRecord } from './lib/types/tender';
 import { SAMPLE_TENDERS } from './lib/data/sampleTenders';
 import { generateBidResponseSkeleton } from './lib/utils/skeletonGenerator';
@@ -121,6 +122,7 @@ export default function App() {
       <>
         <Landing onAuthChange={handleAuthChange} />
         <PwaInstallPrompt isDarkMode={isDarkMode} showInstall />
+        <SwUpdatePrompt isDarkMode={isDarkMode} />
       </>
     );
   }
@@ -257,6 +259,7 @@ export default function App() {
 
       {/* PWA Mobile Installation & Offline Status Prompt */}
       <PwaInstallPrompt isDarkMode={isDarkMode} showInstall={false} />
+      <SwUpdatePrompt isDarkMode={isDarkMode} />
 
     </div>
   );

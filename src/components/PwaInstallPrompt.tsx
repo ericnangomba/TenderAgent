@@ -13,6 +13,7 @@ export const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isDarkMode =
   const [isIos, setIsIos] = useState<boolean>(false);
   const [isStandalone, setIsStandalone] = useState<boolean>(false);
   const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
+  const [formFocused, setFormFocused] = useState<boolean>(false);
 
   useEffect(() => {
     // Check if app is already running in standalone PWA mode
@@ -38,6 +39,15 @@ export const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isDarkMode =
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
+    // A focused field means the on-screen keyboard is up: keep the banner out
+    // of the way until the user is done typing.
+    const isFormEl = (t: EventTarget | null) =>
+      t instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName);
+    const handleFocusIn = (e: FocusEvent) => { if (isFormEl(e.target)) setFormFocused(true); };
+    const handleFocusOut = (e: FocusEvent) => { if (isFormEl(e.target)) setFormFocused(false); };
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('focusout', handleFocusOut);
+
     // Listen for online / offline events
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
@@ -54,6 +64,8 @@ export const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isDarkMode =
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('focusout', handleFocusOut);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -85,7 +97,7 @@ export const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isDarkMode =
       )}
 
       {/* Mobile PWA Install Banner */}
-      {showInstall && showPrompt && !isStandalone && (
+      {showInstall && showPrompt && !isStandalone && !formFocused && (
         <div className="pb-[env(safe-area-inset-bottom)] fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-md z-50 animate-in slide-in-from-bottom duration-300">
           <div className={`p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border shadow-2xl backdrop-blur-md ${
             isDarkMode 

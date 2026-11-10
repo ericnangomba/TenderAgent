@@ -5,15 +5,16 @@ import './index.css';
 // Register PWA Service Worker for offline mobile app experience
 if ('serviceWorker' in navigator) {
   // sw.js uses skipWaiting + clients.claim: an updated worker takes over
-  // immediately. If this page was already controlled, its JS/assets are the
-  // previous version - reload once so the update actually applies. First
-  // install (no prior controller) does not reload.
+  // immediately, leaving an already-controlled page on the previous version's
+  // JS/assets. Never auto-reload: that would discard unsaved tender text,
+  // uploads or profile drafts and could interrupt a running analysis. Tell
+  // the UI instead - it offers Refresh/Later (see SwUpdatePrompt).
   const hadController = !!navigator.serviceWorker.controller;
-  let reloadedForUpdate = false;
+  let announced = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (!hadController || reloadedForUpdate) return;
-    reloadedForUpdate = true;
-    window.location.reload();
+    if (!hadController || announced) return;
+    announced = true;
+    window.dispatchEvent(new CustomEvent('tenderagent:sw-update'));
   });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')

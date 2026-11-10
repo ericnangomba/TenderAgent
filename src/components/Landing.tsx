@@ -32,7 +32,7 @@ const features = [
  */
 export const Landing: React.FC<Props> = ({ onAuthChange }) => {
   return (
-    <div className="min-h-screen bg-[#FBFAF7] text-[#14201C] antialiased">
+    <div className="min-h-screen pb-28 bg-[#FBFAF7] text-[#14201C] antialiased">
       {/* Top bar */}
       <header className="max-w-6xl mx-auto px-6 pt-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
