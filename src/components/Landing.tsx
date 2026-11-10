@@ -39,14 +39,22 @@ export const Landing: React.FC<Props> = ({ onAuthChange }) => {
           <img src={tenderAgentLogo} alt="TenderAgent" className="w-9 h-9 rounded-lg" />
           <span className="font-display text-xl font-semibold tracking-tight">TenderAgent</span>
         </div>
-        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 hidden sm:block">
-          South African tender workspace
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-stone-500 hidden sm:block">
+            South African tender workspace
+          </span>
+          <a
+            href="#auth"
+            className="text-xs font-semibold px-3.5 py-2 rounded-lg bg-emerald-800 text-white hover:bg-emerald-700 transition-colors"
+          >
+            Sign in
+          </a>
+        </div>
       </header>
 
       {/* Hero */}
-      <main className="max-w-6xl mx-auto px-6 pt-14 sm:pt-20 pb-16 grid lg:grid-cols-[1.15fr_0.85fr] gap-12 lg:gap-16 items-start">
-        <section>
+      <main className="max-w-6xl mx-auto px-6 pt-10 sm:pt-20 pb-16 flex flex-col lg:grid lg:grid-cols-[1.15fr_0.85fr] gap-10 lg:gap-16 items-start">
+        <section className="order-1 lg:order-none w-full">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-emerald-800 mb-5">
             CSD &middot; SARS TCS &middot; B-BBEE &middot; CIDB &middot; PPPFA 2022
           </p>
@@ -61,7 +69,18 @@ export const Landing: React.FC<Props> = ({ onAuthChange }) => {
             exactly what a tender demands before deciding to bid.
           </p>
 
-          <div className="mt-10 border-t border-stone-200 pt-8">
+        </section>
+
+        <aside id="auth" className="order-2 lg:order-none w-full lg:sticky lg:top-10 scroll-mt-6">
+          <AuthCard onAuthChange={onAuthChange} initialMode="signup" />
+          <p className="text-[11px] leading-relaxed text-stone-400 mt-4 px-1">
+            Your workspace keeps your company documents under your own account.
+            Analyses run against the documents you choose to upload.
+          </p>
+        </aside>
+
+        <section className="order-3 lg:order-none w-full">
+          <div className="lg:mt-10 border-t border-stone-200 pt-8">
             {features.map((f, i) => (
               <div key={f.n} className={`grid sm:grid-cols-[3.5rem_1fr] gap-2 sm:gap-6 py-5 ${i > 0 ? 'border-t border-stone-200' : ''}`}>
                 <span className="font-display text-sm text-emerald-800 font-semibold pt-1">{f.n}</span>
@@ -73,14 +92,6 @@ export const Landing: React.FC<Props> = ({ onAuthChange }) => {
             ))}
           </div>
         </section>
-
-        <aside className="lg:sticky lg:top-10">
-          <AuthCard onAuthChange={onAuthChange} initialMode="signup" />
-          <p className="text-[11px] leading-relaxed text-stone-400 mt-4 px-1">
-            Your workspace keeps your company documents under your own account.
-            Analyses run against the documents you choose to upload.
-          </p>
-        </aside>
       </main>
 
       <footer className="border-t border-stone-200">

@@ -272,16 +272,16 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
     <div className="space-y-6 animate-in fade-in duration-300">
 
       {/* Top Banner / Context */}
-      <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 relative overflow-hidden`}>
+      <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-4 sm:p-6 relative overflow-hidden`}>
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
               <FileSearch className="w-6 h-6 text-emerald-700" />
-              <h2 className={`text-xl font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              <h2 className={`font-display text-lg sm:text-xl font-semibold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 Check what a tender asks for
               </h2>
             </div>
-            <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'} max-w-2xl leading-relaxed`}>
+            <p className={`hidden sm:block text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'} max-w-2xl leading-relaxed`}>
               Upload a tender document and get a clear list of its requirements - CSD registration, SARS TCS PIN, B-BBEE, CIDB and COIDA -
               plus a response outline you can build your bid on.
             </p>
@@ -532,7 +532,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    RFP Document Excerpt:
+                    Tender text (optional if you upload a file):
                   </span>
                   <span className={`text-[10px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                     {rawText.length} characters {isRawPdfStream && '(Raw Stream)'}
@@ -546,7 +546,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       ? 'bg-slate-950 border-slate-800 text-slate-300'
                       : 'bg-slate-50 border-slate-300 text-slate-800'
                     } ${isRawPdfStream ? 'border-amber-500/60' : ''}`}
-                  placeholder="Paste government or corporate RFP text here, or paste PDF stream (%PDF-1.7)..."
+                  placeholder="Or paste the tender's text here..."
                 />
               </div>
             </div>

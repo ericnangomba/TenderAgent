@@ -119,7 +119,7 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen flex ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} antialiased font-sans selection:bg-emerald-200 selection:text-emerald-900`}>
+    <div className={`min-h-screen flex ${isDarkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-[#FBFAF7] text-slate-900'} antialiased font-sans selection:bg-emerald-200 selection:text-emerald-900`}>
 
       {/* Sidebar Navigation */}
       <Sidebar

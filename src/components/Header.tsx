@@ -69,12 +69,12 @@ export const Header: React.FC<HeaderProps> = ({
 
   const getTabLabel = (key: TabKey) => {
     switch (key) {
-      case 'analyzer': return 'RFP Ingestion & Compliance Analyzer';
-      case 'discovery': return 'South African eTender Discovery Feed';
+      case 'analyzer': return 'Tender compliance check';
+      case 'discovery': return 'Live tender feed';
       case 'finetuning': return 'LLM Dataset & LoRA Fine-Tuning Studio';
-      case 'calculator': return '80/20 & 90/10 Preference Points Calculator';
-      case 'vault': return 'SME Credential Vault';
-      case 'sbd': return 'SBD Returnables & Tender Documents Guide';
+      case 'calculator': return 'Preference points calculator';
+      case 'vault': return 'Company profile vault';
+      case 'sbd': return 'SBD documents guide';
       case 'tracing': return 'Sentry Agent Tracing & Architecture Telemetry';
       case 'settings': return 'Platform & Model Settings';
       default: return 'TenderAgent Platform';
