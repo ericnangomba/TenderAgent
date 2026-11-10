@@ -47,6 +47,10 @@ export default function App() {
 
   const handleAuthChange = (next: AuthState | null) => {
     setAuth(next);
+    // Reset before loading for the new identity: a previous workspace's
+    // profile/status must never bleed into this one, even without a reload.
+    setUserProfile(EMPTY_PROFILE);
+    setProfileStatus('loading');
     // Profile is per-workspace once signed in - reload it for the new identity.
     fetch('/api/profile')
       .then(r => r.json())
