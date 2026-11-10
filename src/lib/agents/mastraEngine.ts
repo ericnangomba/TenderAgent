@@ -311,10 +311,13 @@ ${rawText.slice(0, 10000)}`;
   // Reference extraction: require an explicit separator before the token and
   // at least one digit in it, so narrative words are never captured as a ref.
   let extractedRef = referenceId;
-  const refMatch = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*([^\n]{4,45})/i);
+  // Capture stops at the first hard boundary: sentence end ('. ' + capital),
+  // a run of spaces, or end of line - so trailing prose is never swallowed,
+  // while multiword refs (SANRAL N.001-140-2026/1) keep their internal spaces.
+  const refMatch = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*(.{4,45}?)(?=\.\s+[A-Z]|\s{2,}|\n|$)/i);
   if (refMatch && refMatch[1]) {
     const candidate = refMatch[1].trim().replace(/[.,;:]+$/, '');
-    if (/\d/.test(candidate)) extractedRef = candidate;
+    if (/\d/.test(candidate) && candidate.length >= 4) extractedRef = candidate;
   }
 
   // Title extraction

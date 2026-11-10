@@ -136,3 +136,21 @@ test('skeleton: no unverified eligibility claims (CIDB, registration no, B-BBEE 
   assert.match(blob2, /grading 4CE on file - verify it meets this tender's stated 5CE/);
   assert.ok(!/Qualified contractor/.test(blob2));
 });
+
+test('reference: trailing prose on the same line is never swallowed', async () => {
+  const prose = await executeRfpPipeline({
+    rawText: 'Appointment for road maintenance. BID NUMBER: RDM-2026-088. CIDB grading 5CE required. Closing date: 15 December 2026.',
+    referenceId: 'T14', llmConfig: STATUTORY,
+  });
+  assert.equal(prose.record.referenceNumber, 'RDM-2026-088');
+  const separateLine = await executeRfpPipeline({
+    rawText: 'TENDER NUMBER: SANRAL N.001-140-2026/1\nCIDB grading 5CE required.',
+    referenceId: 'T15', llmConfig: STATUTORY,
+  });
+  assert.equal(separateLine.record.referenceNumber, 'SANRAL N.001-140-2026/1');
+  const singleLine = await executeRfpPipeline({
+    rawText: 'BID NUMBER: CLN-2026-014',
+    referenceId: 'T16', llmConfig: STATUTORY,
+  });
+  assert.equal(singleLine.record.referenceNumber, 'CLN-2026-014');
+});
