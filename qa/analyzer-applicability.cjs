@@ -59,6 +59,12 @@ is required. Submit SBD 4 and SBD 6.1 with your bid. CIDB grading 5CE required.`
         notListedByTender: (t.match(/Not listed by this tender/g) || []).length,
         missingForListed: (t.match(/Missing for a listed requirement/g) || []).length,
         universalRequired: /required for all South African/i.test(t),
+        refShown: (t.match(/Ref: [A-Z0-9\/.-]+/i) || [''])[0],
+        notStatedSystem: /Not stated/.test(t),
+        confirmSystem: /did not state the preference-point system/.test(t),
+        finished: /Finished - results below/.test(t),
+        waitingOnly: /Waiting/.test(t) && !/Finished/.test(t),
+        techCollapsed: (() => { const d = document.querySelector('details'); return d ? !d.open : null; })(),
       };
     });
     console.log(label, JSON.stringify(state));
@@ -71,12 +77,19 @@ is required. Submit SBD 4 and SBD 6.1 with your bid. CIDB grading 5CE required.`
   const s1 = await analyze(SILENT, 'silent-mobile', mobile);
   const s2 = await analyze(LISTING, 'listing-mobile', mobile);
   await analyze(LISTING, 'listing-desktop', desktop);
+  const s3 = await analyze(LISTING + '\nEvaluation: 90/10 preference point system applies.', 'points90-mobile', mobile);
 
   let fail = [];
   if (s1.listedByTender !== 0) fail.push('silent text must list nothing');
   if (s1.mandatoryBadges !== 0) fail.push('no Mandatory badges allowed');
   if (s1.notListedByTender < 4) fail.push('profile rows must show Not listed by this tender when unlisted');
   if (s2.listedByTender < 3) fail.push('listing text should mark CSD/SARS/COIDA listed');
+  if (!/RDM-2026-088/.test(s2.refShown)) fail.push('extracted ref wrong: ' + s2.refShown);
+  if (!s1.notStatedSystem || !s1.confirmSystem) fail.push('silent text must show system Not stated + confirm wording');
+  if (!s2.notStatedSystem) fail.push('listing text states no system - must show Not stated');
+  if (s3.notStatedSystem) fail.push('90/10 text must not show Not stated');
+  if (!s1.finished) fail.push('progress must show Finished after results');
+  if (s1.techCollapsed !== true) fail.push('technical details must be collapsed by default');
   if (s2.mandatoryBadges !== 0) fail.push('no Mandatory badges on listing text either');
   if (fail.length) { console.error('FAIL: ' + fail.join('; ')); process.exit(1); }
   console.log('ANALYZER-APPLICABILITY-OK');

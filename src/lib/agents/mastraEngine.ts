@@ -129,7 +129,7 @@ Output strictly a valid JSON object with NO markdown code fences and NO explanat
     "additionalDocuments": ["SBD 4", "SBD 6.1", "COIDA Good Standing", "CIDB Certificate"]
   },
 Set each checklist boolean true ONLY when the tender text itself lists that item as a requirement; otherwise false. Never infer a statutory obligation that the text does not state.
-  "points": "80/20" or "90/10",
+  "points": "80/20" or "90/10" exactly as stated in the text, or null if the text does not state the preference-point system,
   "technicalThreshold": 75
 }
 
@@ -298,23 +298,30 @@ ${rawText.slice(0, 10000)}`;
   const cidbMatch = rawText.match(/\b([1-9][A-Z]{2}(?:\s*PE)?)\b/i);
   const cidbGrading = cidbMatch ? cidbMatch[1].toUpperCase() : undefined;
 
-  // Points system detection
-  let points: '80/20' | '90/10' = '80/20';
+  // Points system detection: set only when the tender text states it.
+  // Unknown must never silently become 80/20 - the bidder confirms the
+  // system from the tender document.
+  let points: '80/20' | '90/10' | undefined;
   if (/90\/10|90\s*\/\s*10|FIFTY MILLION|R50,?000,?000/i.test(rawText)) {
     points = '90/10';
+  } else if (/80\/20|80\s*\/\s*20/i.test(rawText)) {
+    points = '80/20';
   }
 
-  // Reference extraction
+  // Reference extraction: require an explicit separator before the token and
+  // at least one digit in it, so narrative words are never captured as a ref.
   let extractedRef = referenceId;
-  const refMatch = rawText.match(/(?:BID\s*(?:NO|NUMBER)|TENDER\s*(?:NO|NOTICE|NUMBER)|REF(?:\s*NO)?)\s*[:.-]?\s*([A-Z0-9\/\-_.]{4,35})/i);
-  if (refMatch && refMatch[1]) {
-    extractedRef = refMatch[1].trim();
+  const refMatch = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*([A-Z0-9][A-Z0-9\/\-_.]{3,34})/i);
+  if (refMatch && refMatch[1] && /\d/.test(refMatch[1])) {
+    extractedRef = refMatch[1].trim().replace(/[.,;:]+$/, '');
   }
 
   // Title extraction
   const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
   let title = lines.find(l => /SUPPLY|PROVISION|MAINTENANCE|REHABILITATION|APPOINTMENT|SERVICES/i.test(l)) || lines[0] || 'South African Public Sector RFP';
-  title = title.replace(/^(?:BID|TENDER|NOTICE|DESCRIPTION)\s*[:.-]?\s*/i, '').slice(0, 140);
+  title = title.replace(/^(?:BID|TENDER|NOTICE|DESCRIPTION)\s*[:.-]?\s*/i, '')
+    .replace(/\s*(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-].*$/i, '')
+    .trim().slice(0, 140);
 
   // Department extraction
   let department = 'Organ of State / Public Entity (South Africa)';
@@ -371,7 +378,7 @@ ${rawText.slice(0, 10000)}`;
           ...(/identity documents|certified id/i.test(rawText) ? ['Certified Identity Documents of Directors/Members as stated'] : [])
         ]
       },
-      points,
+      points: points || null,
       technicalThreshold: 70
     },
     modelUsed: 'Statutory Procurement Heuristics Engine (Offline Safe)',
@@ -520,10 +527,10 @@ export async function executeRfpPipeline({
       additionalDocuments: extractedData.checklist?.additionalDocuments || []
     },
     evaluationCriteria: {
-      preferencePointsSystem: extractedData.points || '80/20',
+      preferencePointsSystem: extractedData.points === '80/20' || extractedData.points === '90/10' ? extractedData.points : 'unknown',
       technicalThresholdPercentage: extractedData.technicalThreshold || 70,
-      priceWeight: extractedData.points === '90/10' ? 90 : 80,
-      specificGoalsWeight: extractedData.points === '90/10' ? 10 : 20
+      ...(extractedData.points === '90/10' ? { priceWeight: 90, specificGoalsWeight: 10 }
+        : extractedData.points === '80/20' ? { priceWeight: 80, specificGoalsWeight: 20 } : {})
     },
     rawTextExcerpt: sanitizedText.slice(0, 2000),
     createdAt: new Date()

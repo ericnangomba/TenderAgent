@@ -604,13 +604,22 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     <span className="text-xs text-slate-500">Checking your document...</span>
                   </>
+                ) : extractedData ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">Finished - results below</span>
+                  </>
                 ) : (
                   <span className="text-xs text-slate-400">Waiting</span>
                 )}
               </div>
             </div>
 
-            {/* Span badges row */}
+            {/* Technical details: collapsed by default - customer surface stays plain */}
+            {traceLogs.length > 0 && (
+              <details className="mb-3">
+                <summary className="text-xs text-slate-400 cursor-pointer select-none py-1">Technical details (engine trace)</summary>
+                <div className="mt-2">
             {spans.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {spans.map((sp) => (
@@ -627,7 +636,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
             )}
 
             {/* Progress log: plain-language panel, light in both themes */}
-            <div className={`rounded-lg p-4 text-xs flex-1 overflow-y-auto space-y-2 border max-h-[360px] ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+            <div className={`rounded-lg p-4 text-xs flex-1 overflow-y-auto space-y-2 border max-h-[360px] ${traceLogs.length > 0 ? '' : ''} ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
               {traceLogs.length === 0 ? (
                 <div className="text-slate-400 flex flex-col items-center gap-2 h-full justify-center py-8 lg:py-16 text-center">
                   <FileText className="w-5 h-5 text-slate-300" />
@@ -644,6 +653,19 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 ))
               )}
             </div>
+                </div>
+              </details>
+            )}
+            {traceLogs.length === 0 && (
+              <div className={`rounded-lg p-4 text-xs border ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-500'}`}>
+                Nothing running yet. Upload a tender document and start the check.
+              </div>
+            )}
+            {extractedData && !isUploading && (
+              <div className={`rounded-lg p-4 text-xs border ${isDarkMode ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+                Your results are in the checklist below. Confirm every requirement against the tender's own returnables list.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -826,14 +848,20 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </div>
 
                   <div className={`text-3xl font-bold mb-2 font-mono ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {extractedData.evaluationCriteria?.preferencePointsSystem || extractedData.points || '80/20 System'}
+                    {(() => {
+                      const sys = extractedData.evaluationCriteria?.preferencePointsSystem || extractedData.points;
+                      return sys === '80/20' || sys === '90/10' || sys === '80/20 System' || sys === '90/10 System' ? sys : 'Not stated';
+                    })()}
                   </div>
 
                   <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} leading-relaxed mb-4`}>
                     80/20 applies to values up to R50 million and 90/10 above it under the Preferential Procurement Regulations 2022; the tender's stated system and formula govern.
-                    {(extractedData.evaluationCriteria?.preferencePointsSystem === '90/10' || String(extractedData.points).includes('90'))
-                      ? ' Values estimated > R50 Million (90 Price / 10 Specific Goals).'
-                      : ' Values estimated <= R50 Million (80 Price / 20 Specific Goals).'}
+                    {(() => {
+                      const sys = String(extractedData.evaluationCriteria?.preferencePointsSystem || extractedData.points || '');
+                      if (sys.includes('90')) return ' This text indicates 90/10 (90 Price / 10 Specific Goals), used for values above R50 million.';
+                      if (sys.includes('80')) return ' This text indicates 80/20 (80 Price / 20 Specific Goals), used for values up to R50 million.';
+                      return ' The tender text did not state the preference-point system - confirm 80/20 or 90/10 in the tender document.';
+                    })()}
                   </p>
 
                   <div className="flex items-center gap-2 p-2.5 rounded bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300">

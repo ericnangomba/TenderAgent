@@ -58,6 +58,16 @@ function heavyOpLimiter(req: Request, res: Response, next: () => void): void {
   next();
 }
 
+// Standard security headers on every response (API and static). CSP stays
+// with the static host's config; these are the safe universal set.
+app.use((_req: Request, res: Response, next: () => void) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
+
 // Billing webhooks need the raw body for HMAC signature verification - mount before JSON parsing
 app.use('/api/billing/webhook', foundation.webhookRouter);
 
@@ -74,21 +84,9 @@ app.use('/api', foundation.router);
 app.use('/api/admin', foundation.adminRouter);
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Persistent memory storage for user company profile (POPIA sandboxed)
-let userSmeProfile: IUserProfile = {
-  companyName: 'Apex Strategic Solutions (Pty) Ltd',
-  registrationNumber: '2023/849201/07',
-  csdNumber: 'MAAA0821945',
-  taxComplianceStatusPin: 'TCS-9482104-Z',
-  bbbeeLevel: 1,
-  bbbeeType: 'EME',
-  cidbGrading: '7CE PE',
-  coidaGoodStandingValid: true,
-  coidaExpiryDate: '2027-04-30',
-  contactEmail: 'tenders@apexstrategic.co.za',
-  contactPhone: '+27 (0)11 482 9200',
-  province: 'Western Cape'
-};
+// No server-side sample identity: with no signed-in profile the skeleton
+// falls back to bracketed placeholders, never a fabricated company.
+let userSmeProfile: Partial<IUserProfile> = {};
 
 // Seed sample tenders (all 14 tenders including 10 live Western Cape notices) into memory cache
 SAMPLE_TENDERS.forEach(t => {
@@ -475,7 +473,7 @@ app.post('/api/analyze', heavyOpLimiter, async (req: Request, res: Response) => 
     }
 
     const ref = referenceId || `RFP-ZA-${Date.now().toString().slice(-5)}`;
-    let profile = companyProfile || userSmeProfile;
+    let profile = companyProfile || (Object.keys(userSmeProfile).length ? userSmeProfile : undefined);
     let selectedModelId: string | null = null;
     if (req.auth) {
       const stored = await foundation.repos.profiles.get(req.auth.tenantId);

@@ -28,7 +28,9 @@ export function generateBidResponseSkeleton(
   const tenderRef = tenderData.referenceNumber || 'RFP-REF-2026';
   const tenderTitle = tenderData.title || 'Procurement of Goods & Services';
   const dept = tenderData.issuingDepartment || tenderData.dept || 'Organ of State';
-  const points = tenderData.evaluationCriteria?.preferencePointsSystem || tenderData.points || '80/20';
+  const rawPoints = tenderData.evaluationCriteria?.preferencePointsSystem || tenderData.points;
+  const points: '80/20' | '90/10' | null = rawPoints === '80/20' || rawPoints === '90/10' ? rawPoints
+    : String(rawPoints || '').includes('90') ? '90/10' : String(rawPoints || '').includes('80') ? '80/20' : null;
 
   return {
     tenderReference: tenderRef,
@@ -72,16 +74,19 @@ Phase 3: Quality Assurance, Handover & Warranties
 - Skills transfer and formal close-out certification.`
       },
       {
-        title: `Section 3: Commercial Proposal & ${points} Preference Points Matrix`,
-        description: `Pricing structure optimized for South African ${points} formula under Preferential Procurement Regulations 2022.`,
+        title: points ? `Section 3: Commercial Proposal & ${points} Preference Points Matrix` : 'Section 3: Commercial Proposal & Preference Points',
+        description: points
+          ? `Pricing structure under the ${points} formula stated in this tender (Preferential Procurement Regulations 2022).`
+          : 'Pricing structure - confirm the preference-point system (80/20 or 90/10) stated in the tender document.',
         content: `3.1 Price Responsiveness
 Our commercial model has been calculated strictly inclusive of 15% Value Added Tax (VAT) in South African Rand (ZAR).
 
 3.2 Preference Points Claim (PPPFA 2022)
-Under the ${points} evaluation framework:
-- Price Allocation: ${String(points).includes('90') ? '90 Points' : '80 Points'}
-- Specific Goals (B-BBEE Level ${company.bbbeeLevel}): ${String(points).includes('90') ? '10 Points (Maximum Allocation)' : '20 Points (Maximum Allocation)'}
+${points ? `Under the ${points} evaluation framework stated in this tender:
+- Price Allocation: ${points === '90/10' ? '90 Points' : '80 Points'}
+- Specific Goals: ${points === '90/10' ? '10 Points' : '20 Points'}
 Your final score is computed by the organ of state from all received bids under the ${points} formula; this template does not estimate it.`
+: 'The tender text did not state the preference-point system. Confirm 80/20 or 90/10 in the tender document before completing this claim (80/20 applies up to R50 million and 90/10 above it under the Preferential Procurement Regulations 2022).'}`
       },
       {
         title: 'Section 4: Returnable Schedules & Annexures',

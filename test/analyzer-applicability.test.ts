@@ -73,3 +73,20 @@ test('skeleton keeps the placeholder profile when none is on file', () => {
   assert.equal(sk.bidderProfile.csdNumber, '');
   assert.match(String(sk.bidderProfile.companyName), /^\[/);
 });
+
+test('reference extraction: narrative words are never captured as the ref', async () => {
+  const r = await executeRfpPipeline({ rawText: LISTING_TEXT, referenceId: 'T6', llmConfig: STATUTORY });
+  assert.equal(r.record.referenceNumber, 'RDM-2026-088');
+  assert.equal(r.record.title.includes('RDM-2026-088'), false, 'title must not carry the ref tail');
+});
+
+test('preference-point system: unknown stays unconfirmed, never a silent 80/20', async () => {
+  const r = await executeRfpPipeline({ rawText: SILENT_TEXT, referenceId: 'T7', llmConfig: STATUTORY });
+  assert.equal(r.record.evaluationCriteria.preferencePointsSystem, 'unknown');
+  assert.equal(r.record.evaluationCriteria.priceWeight, undefined);
+  const sk = r.skeleton;
+  assert.ok(!/Under the 80\/20 evaluation framework/.test(JSON.stringify(sk)), 'skeleton must not assert an unstated system');
+  const r2 = await executeRfpPipeline({ rawText: LISTING_TEXT + '\nEvaluation: 90/10 preference point system applies.', referenceId: 'T8', llmConfig: STATUTORY });
+  assert.equal(r2.record.evaluationCriteria.preferencePointsSystem, '90/10');
+  assert.equal(r2.record.evaluationCriteria.priceWeight, 90);
+});
