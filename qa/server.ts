@@ -88,6 +88,12 @@ const customer = await signup('customer.qa@example.co.za');
 const admin = await signup('operator.qa@example.co.za');
 config.adminUserIds.push(admin.userId); // live-array grant for QA pixels only
 
+// QA-only: lets the PWA offline check take the network down for real.
+app.post('/qa/shutdown', (_req, res) => {
+  res.json({ ok: true });
+  setTimeout(() => process.exit(0), 250);
+});
+
 console.log(JSON.stringify({ port, customerCookie: customer.cookie, adminCookie: admin.cookie, adminUserId: admin.userId }));
 
 // Keep alive until killed.

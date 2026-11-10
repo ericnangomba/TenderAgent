@@ -34,7 +34,22 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
 
   const logout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    // No account data may outlive the session on this device: purge every
+    // CacheStorage entry (legacy service-worker builds cached /api/ GETs,
+    // including the company profile) and reload for a clean in-memory slate.
+    try {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHES' });
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch {
+      // Best effort - the reload below still drops all in-memory state.
+    }
     onAuthChange(null);
+    window.location.reload();
   };
 
   if (!auth) return null;
