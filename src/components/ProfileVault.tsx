@@ -55,8 +55,8 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
     }
   };
 
-  const hasCsd = formData.csdNumber.toUpperCase().startsWith('MAAA');
-  const hasTaxPin = Boolean(formData.taxComplianceStatusPin.trim());
+  const hasCsd = (formData.csdNumber || '').toUpperCase().startsWith('MAAA');
+  const hasTaxPin = Boolean((formData.taxComplianceStatusPin || '').trim());
   const hasBbbee = formData.bbbeeLevel >= 1 && formData.bbbeeLevel <= 8;
   const hasCoida = formData.coidaGoodStandingValid;
 

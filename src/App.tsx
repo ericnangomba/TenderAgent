@@ -17,6 +17,7 @@ import { BidReadiness } from './components/BidReadiness';
 import { BidSkeletonModal } from './components/BidSkeletonModal';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 import { SwUpdatePrompt } from './components/SwUpdatePrompt';
+import { ViewErrorBoundary } from './components/ViewErrorBoundary';
 import { IUserProfile, ITender, IBidResponseSkeleton, ISentrySpanRecord } from './lib/types/tender';
 import { SAMPLE_TENDERS } from './lib/data/sampleTenders';
 import { generateBidResponseSkeleton } from './lib/utils/skeletonGenerator';
@@ -49,14 +50,22 @@ export default function App() {
     // Profile is per-workspace once signed in - reload it for the new identity.
     fetch('/api/profile')
       .then(r => r.json())
-      .then(d => { if (d.success && d.profile) setUserProfile(d.profile); })
+      .then(d => { if (d.success && d.profile) setUserProfile(prev => ({ ...prev, ...d.profile })); })
       .catch(() => undefined);
   };
 
   // POPIA SME Profile
   // Empty until the workspace saves real company details; no sample company
   // is ever presented as a signed-in account's own data.
-  const [userProfile, setUserProfile] = useState<IUserProfile>({} as IUserProfile);
+  // A complete empty profile (never partial): views render it even when the
+  // profile fetch fails offline, so no account view can crash on a missing
+  // field. Empty values - no sample company is ever presented as the account.
+  const EMPTY_PROFILE: IUserProfile = {
+    companyName: '', registrationNumber: '', csdNumber: '', taxComplianceStatusPin: '',
+    bbbeeLevel: 0, bbbeeType: 'EME', cidbGrading: '', coidaGoodStandingValid: false,
+    coidaExpiryDate: '', contactEmail: '', contactPhone: '', province: '',
+  };
+  const [userProfile, setUserProfile] = useState<IUserProfile>(EMPTY_PROFILE);
 
   // Load profile from server on mount
   useEffect(() => {
@@ -64,7 +73,7 @@ export default function App() {
       .then(r => r.json())
       .then(data => {
         if (data.success && data.profile) {
-          setUserProfile(data.profile);
+          setUserProfile(prev => ({ ...prev, ...data.profile }));
         }
       })
       .catch(err => console.warn('[App] Profile fetch fallback:', err));
@@ -156,8 +165,9 @@ export default function App() {
           isSampleProfile={!auth}
         />
 
-        {/* View Workspace */}
+        {/* View Workspace: one view's failure must never blank the app */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+          <ViewErrorBoundary key={activeTab} isDarkMode={isDarkMode}>
           {activeTab === 'analyzer' && (
             <RfpAnalyzer
               userProfile={userProfile}
@@ -236,7 +246,8 @@ export default function App() {
               onAuthChange={handleAuthChange}
             />
           )}
-        </main>
+                  </ViewErrorBoundary>
+          </main>
 
         {/* Footer */}
         <footer className={`py-5 px-6 border-t text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-slate-500' : 'border-slate-200 bg-white text-slate-500'
