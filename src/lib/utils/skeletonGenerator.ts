@@ -43,7 +43,7 @@ ${company.companyName} (Registration No: ${company.registrationNumber}) is honor
 
 1.2 Legal Standing & Statutory Verification
 - Central Supplier Database (CSD): Registered under Master Supplier Number ${company.csdNumber}.
-- South African Revenue Service (SARS): Verified Tax Compliant with Active TCS PIN: ${company.taxComplianceStatusPin}.
+- South African Revenue Service (SARS): Tax Compliance Status (TCS) PIN on file: ${company.taxComplianceStatusPin}.
 - Broad-Based Black Economic Empowerment (B-BBEE): Level ${company.bbbeeLevel} Contributor (${company.bbbeeType}) conferring 135% procurement recognition.
 - Compensation Fund (COIDA): Valid Letter of Good Standing active until ${company.coidaExpiryDate}.
 ${tenderData.cidbGradingRequired ? `- CIDB Registration: Qualified contractor status holding ${company.cidbGrading || 'applicable grading'}.` : ''}
@@ -98,7 +98,7 @@ Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.
     complianceChecklist: [
       {
         item: 'Central Supplier Database (CSD)',
-        requirement: 'Active MAAA Number & Verified Tax Compliant',
+        requirement: 'Active MAAA Number & Tax Compliance Status (TCS) PIN',
         smeStatus: company.csdNumber ? `Registered (${company.csdNumber})` : 'Missing CSD Number',
         compliant: Boolean(company.csdNumber),
         referenceDocument: 'CSD Master Supplier Report'
@@ -106,29 +106,29 @@ Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.
       {
         item: 'SARS Tax Compliance Status',
         requirement: 'Valid TCS PIN for third-party verification',
-        smeStatus: company.taxComplianceStatusPin ? `Verified (${company.taxComplianceStatusPin})` : 'Missing Tax PIN',
+        smeStatus: company.taxComplianceStatusPin ? `PIN on file (${company.taxComplianceStatusPin})` : 'Missing Tax PIN',
         compliant: Boolean(company.taxComplianceStatusPin),
         referenceDocument: 'SARS TCS Verification Printout'
       },
       {
         item: 'B-BBEE Status & Specific Goals',
         requirement: 'SANAS Verification Certificate or EME Affidavit',
-        smeStatus: `Level ${company.bbbeeLevel} (${company.bbbeeType})`,
-        compliant: true,
+        smeStatus: `Declared Level ${company.bbbeeLevel} (${company.bbbeeType}) - certificate/affidavit to attach`,
+        compliant: Boolean(company.bbbeeLevel),
         referenceDocument: 'Sworn Affidavit / SANAS Certificate'
       },
       {
         item: 'COIDA Letter of Good Standing',
         requirement: 'Compensation Commissioner current certification',
-        smeStatus: company.coidaGoodStandingValid ? 'Current (In Good Standing)' : 'Pending Renewal',
+        smeStatus: company.coidaGoodStandingValid ? 'Marked current on file' : 'Pending Renewal',
         compliant: Boolean(company.coidaGoodStandingValid),
         referenceDocument: 'COIDA Letter of Good Standing'
       },
       {
         item: 'SBD 4 Declaration of Interest',
         requirement: 'Mandatory declaration of any state employment ties',
-        smeStatus: 'Completed & Certified Clear',
-        compliant: true,
+        smeStatus: 'To complete and sign',
+        compliant: false,
         referenceDocument: 'SBD 4 Original Signed'
       },
       {

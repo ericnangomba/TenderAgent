@@ -9,6 +9,8 @@ import { ProfileVault } from './components/ProfileVault';
 import { SbdFormsGuide } from './components/SbdFormsGuide';
 import { SentryTraceViewer } from './components/SentryTraceViewer';
 import { Settings } from './components/Settings';
+import { Account, AuthState } from './components/Account';
+import { BidReadiness } from './components/BidReadiness';
 import { BidSkeletonModal } from './components/BidSkeletonModal';
 import { PwaInstallPrompt } from './components/PwaInstallPrompt';
 import { IUserProfile, ITender, IBidResponseSkeleton, ISentrySpanRecord } from './lib/types/tender';
@@ -25,6 +27,26 @@ export default function App() {
   const [activeSkeleton, setActiveSkeleton] = useState<IBidResponseSkeleton | null>(null);
   const [isSkeletonModalOpen, setIsSkeletonModalOpen] = useState<boolean>(false);
   const [recentSpans, setRecentSpans] = useState<ISentrySpanRecord[]>([]);
+  const [auth, setAuth] = useState<AuthState | null>(null);
+
+  // Restore an existing session on load.
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (d?.success) setAuth({ tenantId: d.tenantId, email: d.email });
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const handleAuthChange = (next: AuthState | null) => {
+    setAuth(next);
+    // Profile is per-workspace once signed in - reload it for the new identity.
+    fetch('/api/profile')
+      .then(r => r.json())
+      .then(d => { if (d.success && d.profile) setUserProfile(d.profile); })
+      .catch(() => undefined);
+  };
 
   // POPIA SME Profile
   const [userProfile, setUserProfile] = useState<IUserProfile>({
@@ -113,6 +135,7 @@ export default function App() {
         isDarkMode={isDarkMode}
         onToggleTheme={toggleTheme}
         userProfile={userProfile}
+        isSampleProfile={!auth}
       />
 
       {/* Main Content Area */}
@@ -127,6 +150,8 @@ export default function App() {
           onOpenSkeletonModal={() => handleOpenSkeleton(activeSkeleton || undefined)}
           hasAnalyzedTender={Boolean(selectedTender)}
           companyName={userProfile.companyName}
+          taxPinOnFile={Boolean(userProfile.taxComplianceStatusPin)}
+          isSampleProfile={!auth}
         />
 
         {/* View Workspace */}
@@ -151,6 +176,14 @@ export default function App() {
           {activeTab === 'finetuning' && (
             <FineTuningStudio
               isDarkMode={isDarkMode}
+            />
+          )}
+
+          {activeTab === 'readiness' && (
+            <BidReadiness
+              isDarkMode={isDarkMode}
+              signedIn={Boolean(auth)}
+              onOpenAccount={() => setActiveTab('account')}
             />
           )}
 
@@ -190,6 +223,14 @@ export default function App() {
               onToggleTheme={toggleTheme}
             />
           )}
+
+          {activeTab === 'account' && (
+            <Account
+              isDarkMode={isDarkMode}
+              auth={auth}
+              onAuthChange={handleAuthChange}
+            />
+          )}
         </main>
 
         {/* Clean Footer */}
@@ -199,7 +240,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span>🇿🇦 TenderAgent Micro-SaaS</span>
               <span>·</span>
-              <span>POPIA Act 4 of 2013 Sandboxed</span>
+              <span>POPIA privacy controls</span>
               <span>·</span>
               <span>PPPFA & Preferential Procurement Regs 2022</span>
             </div>

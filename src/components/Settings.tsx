@@ -173,8 +173,8 @@ export const Settings: React.FC<SettingsProps> = ({ isDarkMode, onToggleTheme })
                 }`}
               >
                 <option value="session">Ephemeral (Cleared on Session Close / Tab Unload)</option>
-                <option value="7days">7 Days Sandboxed Local Cache</option>
-                <option value="30days">30 Days Encrypted Document Index</option>
+                <option value="7days">7 Days Local Cache</option>
+                <option value="30days">30 Days Local Document Index</option>
               </select>
             </div>
 

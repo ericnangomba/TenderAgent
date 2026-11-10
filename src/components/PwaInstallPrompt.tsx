@@ -107,17 +107,18 @@ export const PwaInstallPrompt: React.FC<PwaInstallPromptProps> = ({ isDarkMode =
                     </span>
                   </div>
                   <p className={`text-[11px] leading-relaxed mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    One-tap home screen access to RFP analysis, eTender feeds, and offline POPIA vault.
+                    One-tap home screen access to RFP analysis, eTender feeds, and your saved work offline.
                   </p>
                 </div>
               </div>
 
               <button
                 onClick={handleDismiss}
-                className={`p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200`}
+                className={`p-2 -m-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200`}
                 title="Dismiss"
+                aria-label="Dismiss install prompt"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 

@@ -33,19 +33,36 @@ export function getCuratedLeads(): IDiscoveredLead[] {
 /**
  * Attempts to fetch live data from etenders.gov.za or SerpApi, falling back gracefully to live synchronized cache
  */
-export async function fetchSouthAfricanTenders(query?: string, province?: string): Promise<{
+export interface FetchTendersOptions {
+  /**
+   * May this call consume a paid SerpApi lookup? Defaults to FALSE so no code
+   * path can spend paid credits accidentally - the caller must prove an active
+   * paying-customer entitlement first. When false the function returns the
+   * curated sample feed, clearly labelled as a sample.
+   */
+  allowSerpApi?: boolean;
+}
+
+export async function fetchSouthAfricanTenders(query?: string, province?: string, options: FetchTendersOptions = {}): Promise<{
   success: boolean;
   leads: IDiscoveredLead[];
   source: string;
   isLiveEtendersPortal: boolean;
   syncedCount: number;
+  /** True only when paid SerpApi credits were actually consumed this call. */
+  serpApiConsumed: boolean;
 }> {
+  const allowSerpApi = options.allowSerpApi === true;
   let leads: IDiscoveredLead[] = getCuratedLeads();
-  let isLive = true;
-  let source = 'National Treasury eTender Portal (etenders.gov.za & Western Cape)';
+  let isLive = false;
+  let serpApiConsumed = false;
+  let source = allowSerpApi
+    ? 'National Treasury eTender Portal (etenders.gov.za & Western Cape)'
+    : 'Sample tender feed (offline fixtures - live lookup reserved for paying customers)';
 
   // 1. Try Live eTenders Direct API (Backend/Node only to avoid browser CORS delay)
-  if (typeof window === 'undefined') {
+  //    Free public endpoint - only attempted when live lookups are permitted.
+  if (allowSerpApi && typeof window === 'undefined') {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
@@ -68,8 +85,9 @@ export async function fetchSouthAfricanTenders(query?: string, province?: string
     }
   }
 
-  // 2. SerpApi fallback if key is configured (Node environment)
-  const apiKey = typeof process !== 'undefined' ? process.env?.SERPAPI_API_KEY : undefined;
+  // 2. SerpApi fallback if key is configured (Node environment).
+  //    Paid credits: only ever consumed when allowSerpApi was proven above.
+  const apiKey = allowSerpApi && typeof process !== 'undefined' ? process.env?.SERPAPI_API_KEY : undefined;
   if (apiKey && apiKey !== 'MY_SERPAPI_KEY') {
     try {
       const q = query ? `${query} site:gov.za "tender" "CSD"` : 'site:gov.za "tender" OR "RFP" "closing date" "CSD"';
@@ -106,6 +124,7 @@ export async function fetchSouthAfricanTenders(query?: string, province?: string
 
       if (serpLeads.length > 0) {
         leads = [...leads, ...serpLeads];
+        serpApiConsumed = true;
       }
     } catch (err: any) {
       console.warn('[SerpApi] Live query fallback:', err.message);
@@ -138,6 +157,7 @@ export async function fetchSouthAfricanTenders(query?: string, province?: string
     leads: filtered,
     source,
     isLiveEtendersPortal: isLive,
+    serpApiConsumed,
     syncedCount: leads.length
   };
 }

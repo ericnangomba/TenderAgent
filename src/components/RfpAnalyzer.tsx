@@ -200,12 +200,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
       }
 
       const initialLogs = [
-        '[Sentry Trace] Initializing transaction span: "RFP Upload Ingestion Channel" (op: agent.pipeline)',
-        '[POPIA Sandbox] Enforcing Protection of Personal Information Act boundary. Redacting confidential identifiers...',
-        `[Mastra Engine] Booting localized agent context using model: ${activeModel}...`,
-        '[Mastra Engine] Verifying local runner (Ollama / vLLM on localhost:11434) with Cloud Failover policy...',
-        '[Sentry Trace] Triggering sub-span execution loop: "Compliance Information Extraction Tactic" (op: agent.llm.call)',
-        '[Compliance Core] Parsing South African parameters (CSD, SARS PIN, B-BBEE, CIDB, COIDA, SBD 1/4/6.1)...'
+        'Submitting document to the analysis pipeline...',
+        `Configured engine: ${activeModel}. The server trace below reports what actually ran.`,
       ];
 
       for (let i = 0; i < initialLogs.length; i++) {
@@ -238,9 +234,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
       const preset = SAMPLE_TENDERS[selectedPresetIndex] || SAMPLE_TENDERS[0];
       setTraceLogs(prev => [
         ...prev,
-        '⚠️ [Auto-Failover] Automatic fallback to Deterministic South African Statutory Procurement Compliance Engine...',
-        '[Mastra Engine] Matching extracted blocks against structural standard constraints...',
-        '[Sentry Trace] Finalizing transaction loop. Saving payload configuration details directly to MongoDB Atlas Index.'
+        'Analysis request failed - showing the selected sample tender as a preview instead.',
       ]);
       setExtractedData({
         title: preset.title,
@@ -286,7 +280,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 RFP Compliance Auditor & Response Synthesizer
               </h2>
               <span className="text-xs px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
-                POPIA Sandboxed
+                POPIA privacy controls
               </span>
             </div>
             <p className={`text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-600'} max-w-2xl leading-relaxed`}>
@@ -323,7 +317,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-600 via-amber-500 to-slate-400 opacity-60" />
       </div>
 
-      {/* Main Grid: Upload & Presets (Left) + Sentry Live Trace Stream (Right) */}
+      {/* Main Grid: Upload & Presets (Left) + Execution Trace (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
         {/* Left Column: RFP Ingestion Form */}
@@ -336,19 +330,16 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   Ingest RFP Target File
                 </h3>
               </div>
-              <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                POPIA Act 4 of 2013
-              </span>
             </div>
 
             <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} mb-4`}>
-              Drop corporate or state-issued tender guidelines PDF/text below. The analysis pipeline executes in local POPIA Sandboxed Container Mode.
+              Drop corporate or state-issued tender guidelines PDF/text below. Text is extracted and analyzed by the configured AI engine, with a rule-based PPPFA fallback when no AI model is available.
             </p>
 
             {/* Specimen Tenders Selector */}
             <div className="mb-4">
               <label className={`text-xs font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5 block`}>
-                Load Verified South African Tender Specimen:
+                Load a South African tender specimen:
               </label>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 {SAMPLE_TENDERS.map((preset, idx) => (
@@ -471,11 +462,11 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </span>
                   <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    {isLocalOnline ? 'Local Runner Active' : 'Cloud Failover Active'}
+                    {isLocalOnline ? 'Local Runner Active' : 'Cloud AI mode'}
                   </span>
                 </div>
                 <div className="text-[10px] font-mono text-slate-500">
-                  Auto-Failover: 🛡️ Active
+                  Auto-Failover: configured
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -585,19 +576,25 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Sentry Live Execution Stream Trace */}
+        {/* Right Column: Execution Trace */}
         <div className="lg:col-span-6 space-y-4">
           <div className={`${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'} border rounded-xl p-6 flex flex-col h-full min-h-[440px]`}>
             <div className="flex items-center justify-between mb-3 border-b border-slate-200 dark:border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <Terminal className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Sentry Live Execution Stream Trace
+                  Execution Trace
                 </h3>
               </div>
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-xs text-slate-400 font-mono">op: agent.pipeline</span>
+                {isUploading ? (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-xs text-slate-400 font-mono">running: agent.pipeline</span>
+                  </>
+                ) : (
+                  <span className="text-xs text-slate-400 font-mono">idle</span>
+                )}
               </div>
             </div>
 
@@ -652,8 +649,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
             </div>
 
             <div className={`mt-3 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'} flex items-center justify-between text-[11px] ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-              <span>Instrumentation: Sentry Custom Spans & Transactions</span>
-              <span>POPIA Partition: Local Sandboxed Host</span>
+              <span>Instrumentation: Sentry tracing (when configured)</span>
+              <span>Processing route reported in the trace above</span>
             </div>
           </div>
         </div>
@@ -869,9 +866,9 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
                   <div className={`p-2 rounded border text-[11px] flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-600'
                     }`}>
-                    <span>Overall Bid Eligibility:</span>
+                    <span>Profile fields on file:</span>
                     <span className="font-semibold text-emerald-600">
-                      {isCsdOk && isSarsOk && isCidbOk ? '100% Fully Responsive' : 'Action Required'}
+                      {isCsdOk && isSarsOk && isCidbOk ? 'Core fields present - verify against the tender requirements' : 'Action Required'}
                     </span>
                   </div>
                 </div>

@@ -1,12 +1,12 @@
 import React from 'react';
 import {
   FileSearch, Sparkles, Scale, Building2, Terminal, Settings as SettingsIcon,
-  BookOpen, ShieldCheck, Moon, Sun, ChevronRight, X, Cpu, CheckCircle2
+  BookOpen, ShieldCheck, Moon, Sun, ChevronRight, X, Cpu, CheckCircle2, UserCircle, ClipboardCheck
 } from 'lucide-react';
 import { IUserProfile } from '../lib/types/tender';
 import tenderAgentLogo from '../assets/tenderagentlogo.png';
 
-export type TabKey = 'analyzer' | 'discovery' | 'finetuning' | 'calculator' | 'vault' | 'sbd' | 'tracing' | 'settings';
+export type TabKey = 'analyzer' | 'discovery' | 'finetuning' | 'calculator' | 'readiness' | 'vault' | 'sbd' | 'tracing' | 'settings' | 'account';
 
 interface SidebarProps {
   activeTab: TabKey;
@@ -17,6 +17,7 @@ interface SidebarProps {
   onToggleTheme: () => void;
   userProfile: IUserProfile;
   isProcessing?: boolean;
+  isSampleProfile?: boolean;
 }
 
 interface NavItem {
@@ -42,6 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isDarkMode,
   onToggleTheme,
   userProfile,
+  isSampleProfile,
   isProcessing
 }) => {
   const [logoError, setLogoError] = React.useState(false);
@@ -70,6 +72,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           description: 'Llama 3.1 & Gemma 2 Studio',
           icon: Cpu,
           badge: 'LoRA'
+        },
+        {
+          key: 'readiness' as TabKey,
+          label: 'Bid Readiness',
+          description: 'Sourced requirement checklist',
+          icon: ClipboardCheck
         },
         {
           key: 'calculator' as TabKey,
@@ -106,6 +114,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'PREFERENCES',
       items: [
+        {
+          key: 'account' as TabKey,
+          label: 'Account',
+          description: 'Sign in & workspace',
+          icon: UserCircle
+        },
         {
           key: 'settings' as TabKey,
           label: 'Platform Settings',
@@ -251,13 +265,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span className={`font-semibold truncate max-w-[140px] ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                 {userProfile.companyName}
               </span>
-              <span className="text-[9px] font-mono text-emerald-600 font-bold">
-                Lvl {userProfile.bbbeeLevel}
-              </span>
+              {isSampleProfile ? (
+                <span className="text-[9px] font-mono text-amber-600 font-bold">
+                  SAMPLE
+                </span>
+              ) : (
+                <span className="text-[9px] font-mono text-emerald-600 font-bold">
+                  Lvl {userProfile.bbbeeLevel}
+                </span>
+              )}
             </div>
             <div className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} flex items-center justify-between`}>
               <span>CSD: {userProfile.csdNumber || 'Unset'}</span>
-              <span className="text-emerald-600 font-semibold">100% POPIA Safe</span>
+              <span className="text-emerald-600 font-semibold">POPIA privacy controls</span>
             </div>
           </div>
 

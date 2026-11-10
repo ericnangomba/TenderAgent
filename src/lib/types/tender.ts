@@ -146,6 +146,8 @@ export interface IPlatformModel {
   contextWindow: string;
   defaultEndpoint?: string;
   isAvailable: boolean;
+  /** Demo/preview entry, not a deployed model. */
+  isDemo?: boolean;
 }
 
 export interface IFineTuningExample {
@@ -168,6 +170,8 @@ export interface IFineTuningDataset {
   format: 'alpaca' | 'sharegpt' | 'chatml';
   examples: IFineTuningExample[];
   createdAt: string;
+  /** Owning tenant; absent on curated sample datasets. */
+  tenantId?: string;
 }
 
 export interface IFineTuningJob {
@@ -193,6 +197,10 @@ export interface IFineTuningJob {
   adapterArtifactName: string;
   outputModelName: string;
   createdAt: string;
+  /** Owning tenant; absent on sample jobs. */
+  tenantId?: string;
+  /** True for simulated training runs (no GPU execution, no model artifact). */
+  simulated?: boolean;
   completedAt?: string;
 }
 

@@ -23,7 +23,14 @@ export interface ParseExecutionPayload {
   rawText: string;
   referenceId: string;
   companyProfile?: Partial<IUserProfile>;
+  /** SERVER-RESOLVED engine config only (see resolveServerLlmConfig). Client
+   *  request bodies are never trusted for model/baseUrl/apiKey: a caller-
+   *  supplied baseUrl would receive the server's paid API key (SSRF). */
   llmConfig?: Partial<IOpenLlmConfig>;
+  /** Paid cloud AI calls (Gemini) run only when the server proved the caller
+   *  may spend - a signed-in tenant with an active subscription. Defaults
+   *  false so demo traffic can never burn paid credits in any mode. */
+  allowCloudLlm?: boolean;
 }
 
 export interface PipelineExecutionResult {
@@ -37,21 +44,47 @@ export interface PipelineExecutionResult {
 // In-memory tender repository backup when standalone without active MongoDB server
 export const inMemoryTenderStore = new Map<string, any>();
 
-// Global Active LLM Configuration (Llama 3.1 8B, Gemma 2, Gemini 2.5 Flash, Ollama)
+// Server operator default engine config. Contains NO secrets: the Gemini key
+// lives only in process.env.GEMINI_API_KEY and is used solely by the Gemini SDK
+// call below - it is never attached to local-runner or other HTTP requests.
 export let activeLlmConfig: IOpenLlmConfig = {
   provider: 'llama-3.1-8b',
   modelId: 'meta-llama/Llama-3.1-8B-Instruct',
   baseUrl: 'http://localhost:11434/v1',
-  apiKey: process.env.GEMINI_API_KEY || '',
   temperature: 0.1,
   topP: 0.9,
   maxTokens: 2048,
   systemPrompt: 'You are an expert South African tender compliance auditor analyzing public procurement RFP documents under South African procurement legislation (PPPFA, Preferential Procurement Regulations 2022, CIDB Act, COIDA, POPIA, and National Treasury SCM instructions).'
 };
 
-export function updateActiveLlmConfig(config: Partial<IOpenLlmConfig>): IOpenLlmConfig {
-  activeLlmConfig = { ...activeLlmConfig, ...config };
-  return activeLlmConfig;
+/**
+ * Server-side registry of engines a signed-in tenant may select. Model IDs are
+ * allowlisted; baseUrl values are loopback constants chosen by the operator,
+ * never by the request. Anything not listed here cannot be selected.
+ */
+const SELECTABLE_ENGINES: Record<string, Partial<IOpenLlmConfig>> = {
+  'llama-3.1-8b-instruct': { provider: 'ollama', modelId: 'meta-llama/Llama-3.1-8B-Instruct', baseUrl: 'http://localhost:11434/v1' },
+  'gemma-2-9b-it': { provider: 'ollama', modelId: 'google/gemma-2-9b-it', baseUrl: 'http://localhost:11434/v1' },
+  'gemini-2.5-flash': { provider: 'gemini', modelId: 'gemini-2.5-flash' },
+  'gemma2-local': { provider: 'statutory', modelId: 'gemma2-local' },
+};
+
+/** Resolve a tenant's selected model id to a trusted server-side engine config. */
+export function resolveServerLlmConfig(selectedModelId?: string | null): Partial<IOpenLlmConfig> {
+  if (selectedModelId && SELECTABLE_ENGINES[selectedModelId]) {
+    return { ...SELECTABLE_ENGINES[selectedModelId] };
+  }
+  return {};
+}
+
+/** Public view of the active engine: never includes secrets. */
+export function publicLlmConfigView() {
+  return {
+    modelId: activeLlmConfig.modelId,
+    provider: activeLlmConfig.provider,
+    baseUrl: activeLlmConfig.baseUrl,
+    temperature: activeLlmConfig.temperature,
+  };
 }
 
 export interface IModelExtractionResult {
@@ -68,7 +101,8 @@ export interface IModelExtractionResult {
 async function extractComplianceWithGemma(
   rawText: string, 
   referenceId: string, 
-  customConfig?: Partial<IOpenLlmConfig>
+  customConfig?: Partial<IOpenLlmConfig>,
+  allowCloudLlm = false
 ): Promise<IModelExtractionResult> {
   const config = { ...activeLlmConfig, ...(customConfig || {}) };
   const failoverLogs: string[] = [];
@@ -111,7 +145,9 @@ ${rawText.slice(0, 10000)}`;
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {})
+          // No Authorization header here on purpose: local runners do not need
+          // one, and attaching the server's paid API key to an HTTP call would
+          // leak it wherever the endpoint points.
         },
         signal: controller.signal,
         body: JSON.stringify({
@@ -138,9 +174,15 @@ ${rawText.slice(0, 10000)}`;
     }
   };
 
-  // Helper to attempt Cloud Gemini
+  // Helper to attempt Cloud Gemini. The key comes from server env only, and
+  // the whole call is gated on allowCloudLlm: paid AI credits are spent only
+  // for signed-in tenants with an active subscription, in every mode.
   const attemptGemini = async (): Promise<any | null> => {
-    const apiKey = config.apiKey || process.env.GEMINI_API_KEY;
+    if (!allowCloudLlm) {
+      failoverLogs.push('[Policy] Cloud AI skipped: paid AI credits are used only for subscribed accounts.');
+      return null;
+    }
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return null;
     try {
       const ai = new GoogleGenAI({ apiKey });
@@ -239,7 +281,7 @@ ${rawText.slice(0, 10000)}`;
       };
     }
 
-    failoverLogs.push(`⚠️ [Auto-Failover] Local models offline. Engaging South African Statutory Compliance Engine (POPIA Sandboxed)...`);
+    failoverLogs.push(`⚠️ [Auto-Failover] Local models offline. Engaging rule-based statutory compliance engine (offline)...`);
   }
 
   // Deterministic South African Statutory Parsing Engine
@@ -345,7 +387,8 @@ export async function executeRfpPipeline({
   rawText,
   referenceId,
   companyProfile,
-  llmConfig
+  llmConfig,
+  allowCloudLlm = false
 }: ParseExecutionPayload): Promise<PipelineExecutionResult> {
   const startTime = Date.now();
   const traceLogs: string[] = [];
@@ -402,13 +445,13 @@ export async function executeRfpPipeline({
   }
 
   // POPIA Sandboxing Step
-  addTrace(`[POPIA Sandbox] Enforcing Protection of Personal Information Act boundary. Redacting bank identifiers & masking raw PII...`);
+  addTrace(`[Privacy] Applying PII redaction before AI processing (ID-number and card-like digit sequences; see docs/FOUNDATION.md for limits).`);
   const popiaSpan = createSpan('POPIA Data Sanitization & Compliance Verification', 'popia.sanitize', 'Scrub sensitive SME data');
   // Clean workingText for security
   const sanitizedText = workingText.replace(/\b(?:\d[ -]*?){13,16}\b/g, '[CONFIDENTIAL_POPIA_REDACTED]');
   await new Promise(r => setTimeout(r, 60));
   finalizeSpan(popiaSpan, 'success', { bytesSanitized: workingText.length, popiaStandard: 'Act 4 of 2013' });
-  addTrace(`[POPIA Sandbox] Ingestion pipeline isolated in POPIA Sandboxed Container Mode.`);
+  addTrace(`[Privacy] Ingestion pipeline processes this document for the current session only.`);
 
   // Gemma 2 / Llama 3.1 8B LLM Extraction Step
   addTrace(`[Mastra Engine] Booting localized agent context using active LLM (${activeLlmConfig.modelId})...`);
@@ -418,7 +461,7 @@ export async function executeRfpPipeline({
   let extractedData: any;
   let modelUsedName = activeLlmConfig.modelId;
   try {
-    const extractionResult = await extractComplianceWithGemma(sanitizedText, activeRefId, llmConfig);
+    const extractionResult = await extractComplianceWithGemma(sanitizedText, activeRefId, llmConfig, allowCloudLlm);
     extractedData = extractionResult.parsed;
     modelUsedName = extractionResult.modelUsed;
     if (extractionResult.failoverLogs?.length) {
