@@ -228,6 +228,101 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     }
   });
 
+  // Operator-granted complimentary tester access. No billing provider is
+  // involved: a grant writes a test_cohort entitlement directly, attributed
+  // to the granting operator, time-bounded and revocable. Server-side
+  // requireAdmin on every route; grants are inert until an operator (Eric)
+  // makes one - this mechanism alone activates nothing.
+  adminRouter.post('/test-access/grant', requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { email, days } = req.body || {};
+      if (typeof email !== 'string' || !email.includes('@')) {
+        res.status(400).json({ success: false, error: 'valid email required' });
+        return;
+      }
+      const dayCount = Number(days);
+      if (!Number.isInteger(dayCount) || dayCount < 1 || dayCount > 90) {
+        res.status(400).json({ success: false, error: 'days must be an integer between 1 and 90' });
+        return;
+      }
+      const user = await repos.users.getByEmail(email.toLowerCase());
+      if (!user) {
+        res.status(404).json({ success: false, error: 'no account with that email' });
+        return;
+      }
+      const now = new Date();
+      const periodEnd = new Date(now.getTime() + dayCount * 24 * 60 * 60 * 1000);
+      await repos.entitlements.put({
+        tenantId: user.tenantId,
+        planId: 'test_cohort',
+        status: 'active',
+        currentPeriodEnd: periodEnd,
+        cancelAtPeriodEnd: false,
+        providerName: 'operator_comp',
+        providerSubscriptionRef: `comp-grant by ${req.auth!.userId} at ${now.toISOString()}`,
+        refundedAt: null,
+        lastEventAt: now,
+        lastEventId: `comp-${now.getTime()}`,
+        updatedAt: now,
+      });
+      console.log(`[admin] test-access GRANT tenant=${user.tenantId} email=${email.toLowerCase()} days=${dayCount} by=${req.auth!.userId} at=${now.toISOString()}`);
+      res.json({ success: true, tenantId: user.tenantId, planId: 'test_cohort', currentPeriodEnd: periodEnd });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  adminRouter.post('/test-access/revoke', requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { email } = req.body || {};
+      if (typeof email !== 'string' || !email.includes('@')) {
+        res.status(400).json({ success: false, error: 'valid email required' });
+        return;
+      }
+      const user = await repos.users.getByEmail(email.toLowerCase());
+      if (!user) {
+        res.status(404).json({ success: false, error: 'no account with that email' });
+        return;
+      }
+      const ent = await repos.entitlements.get(user.tenantId);
+      if (!ent || ent.planId !== 'test_cohort' || ent.status !== 'active') {
+        res.status(404).json({ success: false, error: 'no active tester grant for that account' });
+        return;
+      }
+      const now = new Date();
+      await repos.entitlements.put({ ...ent, status: 'cancelled', updatedAt: now });
+      console.log(`[admin] test-access REVOKE tenant=${user.tenantId} email=${email.toLowerCase()} by=${req.auth!.userId} at=${now.toISOString()}`);
+      res.json({ success: true, tenantId: user.tenantId, status: 'cancelled' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  adminRouter.get('/test-access/status', requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const email = typeof req.query.email === 'string' ? req.query.email : '';
+      if (!email.includes('@')) {
+        res.status(400).json({ success: false, error: 'valid email query required' });
+        return;
+      }
+      const user = await repos.users.getByEmail(email.toLowerCase());
+      if (!user) {
+        res.status(404).json({ success: false, error: 'no account with that email' });
+        return;
+      }
+      const ent = await repos.entitlements.get(user.tenantId);
+      res.json({
+        success: true,
+        tenantId: user.tenantId,
+        entitlement: ent
+          ? { planId: ent.planId, status: ent.status, currentPeriodEnd: ent.currentPeriodEnd, effectiveStatus: effectiveStatus(ent, new Date(), config.pastDueGraceDays) }
+          : { effectiveStatus: 'none' },
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   const accountRouter = Router();
   accountRouter.get('/account', async (req: Request, res: Response) => {
     if (!req.auth) {

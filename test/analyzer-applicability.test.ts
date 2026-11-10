@@ -90,3 +90,34 @@ test('preference-point system: unknown stays unconfirmed, never a silent 80/20',
   assert.equal(r2.record.evaluationCriteria.preferencePointsSystem, '90/10');
   assert.equal(r2.record.evaluationCriteria.priceWeight, 90);
 });
+
+test('closing date: explicit dates parsed, unstated stays null, never +21d', async () => {
+  const r = await executeRfpPipeline({ rawText: SILENT_TEXT, referenceId: 'T9', llmConfig: STATUTORY });
+  assert.equal(new Date(r.record.closingDate).toISOString().slice(0, 10), '2026-12-15');
+  const noDate = await executeRfpPipeline({ rawText: 'Provision of catering services. BID NUMBER: CAT-2026-001.', referenceId: 'T10', llmConfig: STATUTORY });
+  assert.equal(noDate.record.closingDate ?? null, null);
+});
+
+test('multiword explicit reference preserved (SANRAL style)', async () => {
+  const r = await executeRfpPipeline({
+    rawText: 'TENDER NUMBER: SANRAL N.001-140-2026/1\nProvision of road maintenance services.',
+    referenceId: 'T11', llmConfig: STATUTORY,
+  });
+  assert.equal(r.record.referenceNumber, 'SANRAL N.001-140-2026/1');
+});
+
+test('category: cleaning is not ICT; unknown stays General Services', async () => {
+  const r = await executeRfpPipeline({ rawText: SILENT_TEXT, referenceId: 'T12', llmConfig: STATUTORY });
+  assert.equal(r.record.category, 'Security & Facilities');
+  const generic = await executeRfpPipeline({ rawText: 'Appointment of a service provider for general work. BID NUMBER: GEN-1.', referenceId: 'T13', llmConfig: STATUTORY });
+  assert.equal(generic.record.category, 'General Services');
+});
+
+test('skeleton: no unconditional VAT-inclusive claim or B-BBEE level 0', () => {
+  const sk = generateBidResponseSkeleton({ title: 'T' });
+  const blob = JSON.stringify(sk);
+  assert.ok(!/strictly inclusive of 15%/.test(blob), 'no unconditional inclusive-VAT claim');
+  assert.ok(!/Level 0/.test(blob), 'no B-BBEE level 0 assertion');
+  assert.match(blob, /standard VAT rate is 15%/);
+  assert.match(blob, /\[Tender reference/);
+});

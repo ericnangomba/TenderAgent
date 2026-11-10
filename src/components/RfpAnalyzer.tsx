@@ -936,7 +936,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                       : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
                     }`}
                 >
-                  Test Price Math (80/20)
+                  {(() => {
+                    const sys = extractedData.evaluationCriteria?.preferencePointsSystem;
+                    return sys === '80/20' || sys === '90/10' ? `Test Price Math (${sys})` : 'Test Price Math';
+                  })()}
                 </button>
 
                 <button

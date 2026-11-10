@@ -25,7 +25,7 @@ export function generateBidResponseSkeleton(
     province: '[Province]'
   };
 
-  const tenderRef = tenderData.referenceNumber || 'RFP-REF-2026';
+  const tenderRef = tenderData.referenceNumber || '[Tender reference - confirm from the tender document]';
   const tenderTitle = tenderData.title || 'Procurement of Goods & Services';
   const dept = tenderData.issuingDepartment || tenderData.dept || 'Organ of State';
   const rawPoints = tenderData.evaluationCriteria?.preferencePointsSystem || tenderData.points;
@@ -46,10 +46,10 @@ export function generateBidResponseSkeleton(
 ${company.companyName} (Registration No: ${company.registrationNumber}) is honored to submit this formal proposal in response to tender ${tenderRef}: "${tenderTitle}" issued by ${dept}.
 
 1.2 Legal Standing & Statutory Verification
-- Central Supplier Database (CSD): Registered under Master Supplier Number ${company.csdNumber}.
-- South African Revenue Service (SARS): Tax Compliance Status (TCS) PIN on file: ${company.taxComplianceStatusPin}.
-- Broad-Based Black Economic Empowerment (B-BBEE): Level ${company.bbbeeLevel} Contributor (${company.bbbeeType}) conferring 135% procurement recognition.
-- Compensation Fund (COIDA): Valid Letter of Good Standing active until ${company.coidaExpiryDate}.
+- Central Supplier Database (CSD): ${company.csdNumber ? `MAAA supplier number on file: ${company.csdNumber}` : '[MAAA supplier number]'}.
+- South African Revenue Service (SARS): Tax Compliance Status (TCS) PIN: ${company.taxComplianceStatusPin || '[TCS PIN]'}.
+${company.bbbeeLevel ? `- Broad-Based Black Economic Empowerment (B-BBEE): Level ${company.bbbeeLevel} Contributor (${company.bbbeeType}).` : '- B-BBEE: [level per your certificate or affidavit]'}
+${company.coidaGoodStandingValid && company.coidaExpiryDate ? `- Compensation Fund (COIDA): Letter of Good Standing held, expiry ${company.coidaExpiryDate}.` : ''}
 ${tenderData.cidbGradingRequired ? `- CIDB Registration: Qualified contractor status holding ${company.cidbGrading || 'applicable grading'}.` : ''}
 
 1.3 Protection of Personal Information Act (POPIA) Undertaking
@@ -79,7 +79,7 @@ Phase 3: Quality Assurance, Handover & Warranties
           ? `Pricing structure under the ${points} formula stated in this tender (Preferential Procurement Regulations 2022).`
           : 'Pricing structure - confirm the preference-point system (80/20 or 90/10) stated in the tender document.',
         content: `3.1 Price Responsiveness
-Our commercial model has been calculated strictly inclusive of 15% Value Added Tax (VAT) in South African Rand (ZAR).
+All pricing is stated in South African Rand (ZAR). State here whether your prices include or exclude VAT, as this tender's pricing schedule requires (the standard VAT rate is 15%).
 
 3.2 Preference Points Claim (PPPFA 2022)
 ${points ? `Under the ${points} evaluation framework stated in this tender:
@@ -120,7 +120,7 @@ Your final score is computed by the organ of state from all received bids under 
       {
         item: 'B-BBEE Status & Specific Goals',
         requirement: 'SANAS Verification Certificate or EME Affidavit',
-        smeStatus: `Declared Level ${company.bbbeeLevel} (${company.bbbeeType}) - certificate/affidavit to attach`,
+        smeStatus: company.bbbeeLevel ? `Declared Level ${company.bbbeeLevel} (${company.bbbeeType}) - certificate/affidavit to attach` : 'Level not set - add your certificate or affidavit level',
         compliant: Boolean(company.bbbeeLevel),
         referenceDocument: 'Sworn Affidavit / SANAS Certificate'
       },

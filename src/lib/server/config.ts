@@ -25,6 +25,18 @@ export const PLANS: Plan[] = [
     includedAnalyses: 60,
     includedSerpapiLookups: 30,
   },
+  {
+    // Complimentary tester cohort: granted only by an operator through
+    // /api/admin/test-access, never by a billing webhook. Quota figures are
+    // PROVISIONAL placeholders pending Eric's decision - no grant is active
+    // until he approves cohort access.
+    id: 'test_cohort',
+    name: 'Tester cohort (complimentary, provisional limits)',
+    priceCentsZAR: 0,
+    interval: 'monthly',
+    includedAnalyses: 20,
+    includedSerpapiLookups: 10,
+  },
 ];
 
 export function getPlan(planId: string | null | undefined, plans: Plan[] = PLANS): Plan | undefined {

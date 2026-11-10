@@ -27,7 +27,7 @@ export interface ITender {
   closingDate: string | Date;
   estimatedBudget?: string;
   province?: string;
-  category?: 'ICT & Technology' | 'Civil & Construction' | 'Security & Facilities' | 'Logistics & Fleet' | 'Professional Services' | 'Medical & Healthcare';
+  category?: 'ICT & Technology' | 'Civil & Construction' | 'Security & Facilities' | 'Logistics & Fleet' | 'Professional Services' | 'Medical & Healthcare' | 'General Services';
   cidbGradingRequired?: string;
   extractedComplianceChecklist: IComplianceChecklist;
   evaluationCriteria: IEvaluationCriteria;

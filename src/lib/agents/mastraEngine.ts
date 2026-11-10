@@ -114,7 +114,7 @@ Output strictly a valid JSON object with NO markdown code fences and NO explanat
   "title": "Concise clean tender title",
   "referenceNumber": "Unique tender reference ID or use '${referenceId}'",
   "issuingDepartment": "Name of organ of state or state-owned enterprise",
-  "closingDate": "YYYY-MM-DD",
+  "closingDate": "YYYY-MM-DD exactly as stated, or null if the text states no closing date",
   "cidbGrading": "Extracted CIDB grading such as 7CE, 3GB, or null",
   "estimatedBudget": "Estimated amount in ZAR or Not Specified",
   "category": "Services: General | Financial and insurance activities | Supplies: General | Civil engineering | Information and communication | ICT & Technology | Security & Facilities",
@@ -311,9 +311,10 @@ ${rawText.slice(0, 10000)}`;
   // Reference extraction: require an explicit separator before the token and
   // at least one digit in it, so narrative words are never captured as a ref.
   let extractedRef = referenceId;
-  const refMatch = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*([A-Z0-9][A-Z0-9\/\-_.]{3,34})/i);
-  if (refMatch && refMatch[1] && /\d/.test(refMatch[1])) {
-    extractedRef = refMatch[1].trim().replace(/[.,;:]+$/, '');
+  const refMatch = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*([^\n]{4,45})/i);
+  if (refMatch && refMatch[1]) {
+    const candidate = refMatch[1].trim().replace(/[.,;:]+$/, '');
+    if (/\d/.test(candidate)) extractedRef = candidate;
   }
 
   // Title extraction
@@ -341,9 +342,29 @@ ${rawText.slice(0, 10000)}`;
   else if (/KWAZULU|DURBAN|ETHEKWINI/i.test(rawText)) province = 'KwaZulu-Natal';
   else if (/EASTERN CAPE|GQEBERHA/i.test(rawText)) province = 'Eastern Cape';
 
-  // Category
-  let category = 'ICT & Technology';
+  // Closing date: only an explicit date in the text; otherwise null.
+  // Supported: ISO (2026-12-15), '15 December 2026', DD/MM/YYYY or DD-MM-YYYY
+  // (South African day-first convention). Unparseable stays null.
+  let closingDate: string | null = null;
+  const MONTHS: Record<string, number> = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+  const closeCtx = rawText.match(/closing\s*(?:date)?\s*[:.-]?\s*(.{0,40})/i)?.[1] || '';
+  const iso = closeCtx.match(/(20\d{2})-(\d{2})-(\d{2})/);
+  const named = closeCtx.match(/(\d{1,2})\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s*(20\d{2})/i);
+  const numeric = closeCtx.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](20\d{2})/);
+  const mk = (y: number, m: number, d: number) => {
+    const dt = new Date(Date.UTC(y, m, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m && dt.getUTCDate() === d ? dt : null;
+  };
+  let parsed: Date | null = null;
+  if (iso) parsed = mk(+iso[1], +iso[2] - 1, +iso[3]);
+  else if (named) parsed = mk(+named[3], MONTHS[named[2].toLowerCase()], +named[1]);
+  else if (numeric) parsed = mk(+numeric[3], +numeric[2] - 1, +numeric[1]);
+  if (parsed) closingDate = parsed.toISOString().split('T')[0];
+
+  // Category: keyword-derived, neutral default - never a hardcoded guess.
+  let category = 'General Services';
   if (cidbGrading || /CONSTRUCTION|ROAD|ASPHALT|CIVIL|BUILDING/i.test(rawText)) category = 'Civil & Construction';
+  else if (/CLEANING|HYGIENE|PEST CONTROL|GARDENING|LANDSCAPING|FACILITIES MANAGEMENT|CATERING/i.test(rawText)) category = 'Security & Facilities';
   else if (/SECURITY|GUARDING|ARMED|ACCESS CONTROL|PSIRA/i.test(rawText)) category = 'Security & Facilities';
   else if (/FLEET|VEHICLE|TELEMATICS|LOGISTICS/i.test(rawText)) category = 'Logistics & Fleet';
   else if (/HEALTHCARE|MEDICAL|CLINIC|HOSPITAL/i.test(rawText)) category = 'Medical & Healthcare';
@@ -354,7 +375,7 @@ ${rawText.slice(0, 10000)}`;
       title,
       referenceNumber: extractedRef,
       issuingDepartment: department,
-      closingDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      closingDate,
       cidbGrading: cidbGrading || null,
       estimatedBudget: 'Not Specified',
       province,
@@ -512,7 +533,8 @@ export async function executeRfpPipeline({
     title: extractedData.title || 'South African Public Sector RFP',
     referenceNumber: extractedData.referenceNumber || referenceId,
     issuingDepartment: extractedData.issuingDepartment || 'Organ of State',
-    closingDate: new Date(extractedData.closingDate || Date.now() + 21 * 24 * 60 * 60 * 1000),
+    ...(extractedData.closingDate && !isNaN(Date.parse(extractedData.closingDate))
+      ? { closingDate: new Date(extractedData.closingDate) } : {}),
     cidbGradingRequired: extractedData.cidbGrading,
     estimatedBudget: extractedData.estimatedBudget || 'Not Specified',
     province: extractedData.province || 'National / South Africa',
