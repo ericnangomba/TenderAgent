@@ -5,8 +5,10 @@
 // TCS PIN, tenant feeds) survived sign-out and could be served to the next
 // account on a shared browser. v3 rules:
 //   1. /api/ responses are NEVER cached. Offline API calls fail honestly.
-//   2. On activation, every legacy cache (incl. all v2 API entries) is purged.
-//   3. On 'CLEAR_CACHES' (sent by the page at sign-out), all caches are purged.
+//   2. On activation, legacy tenderagent-* caches (incl. all v2 API entries)
+//      are purged; the freshly installed shell is left intact.
+//   3. On 'CLEAR_CACHES' (sent by the page at sign-out), this app's caches are
+//      purged. Only tenderagent-* keys are touched, never other origin tooling.
 //   4. Only same-origin, non-API static assets and the app shell are cached.
 const CACHE_NAME = 'tenderagent-pwa-v3';
 const STATIC_ASSETS = [
@@ -21,8 +23,21 @@ const STATIC_ASSETS = [
   '/icon-512.png'
 ];
 
-function purgeAllCaches() {
-  return caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
+// Only caches this app created. Legacy v2 (tenderagent-pwa-v2) matches the
+// prefix, so the upgrade purge still wipes every v2-cached /api/ entry, while
+// unrelated same-origin tooling keeps its own caches.
+const CACHE_PREFIX = 'tenderagent-';
+
+function purgeOwnCaches() {
+  return caches.keys().then((keys) =>
+    Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX)).map((key) => caches.delete(key))));
+}
+
+function purgeLegacyCaches() {
+  return caches.keys().then((keys) =>
+    Promise.all(
+      keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key))
+    ));
 }
 
 // Install: Pre-cache core app shell safely without aborting on missing single file
@@ -42,21 +57,20 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate: purge every legacy cache (this wipes all v2-cached /api/ entries
-// and anything else older builds stored), then take control.
+// Activate: purge only LEGACY tenderagent caches (this wipes all v2-cached
+// /api/ entries and anything else older builds stored). The current shell was
+// pre-cached during install with per-asset fallbacks, so it is left intact -
+// activation never destroys the fresh shell it depends on.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    purgeAllCaches()
-      .then(() => caches.open(CACHE_NAME))
-      .then((cache) => cache.addAll(STATIC_ASSETS.filter((u) => u !== '/')).catch(() => undefined))
-      .then(() => self.clients.claim())
+    purgeLegacyCaches().then(() => self.clients.claim())
   );
 });
 
 // Sign-out hook: the page posts CLEAR_CACHES so no account data outlives the session.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'CLEAR_CACHES') {
-    event.waitUntil(purgeAllCaches());
+    event.waitUntil(purgeOwnCaches());
   }
 });
 

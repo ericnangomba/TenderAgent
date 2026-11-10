@@ -164,3 +164,14 @@ test('oversized analyze payload rejected with 413 before any model work', async 
   const MAX = 2_000_000;
   assert.ok((MAX + 1) > MAX);
 });
+
+test('API responses carry Cache-Control: no-store (auth endpoints, sensitive GETs, public feed)', async () => {
+  // Anonymous 401s, auth endpoints, and the tenant feed all pass the same
+  // middleware: nothing under /api/ may sit in a browser or intermediary cache.
+  for (const path of ['/api/auth/me', '/api/profile', '/api/tenders', '/api/auth/login']) {
+    const res = await fetch(`${t.baseUrl}${path}`, path.endsWith('login')
+      ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+      : undefined);
+    assert.equal(res.headers.get('cache-control'), 'no-store', `${path} must be no-store`);
+  }
+});

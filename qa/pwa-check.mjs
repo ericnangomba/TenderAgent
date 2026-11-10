@@ -26,11 +26,11 @@ async function cachedUrls() {
 }
 
 // 1. Register SW signed-out, then sign in and browse (fires /api/auth/me, /api/profile)
-await page.goto(base, { waitUntil: 'networkidle0', timeout: 30000 });
+await page.goto(base, { waitUntil: 'load', timeout: 30000 /* third-party fonts can hang networkidle0; SW readiness is awaited explicitly */ });
 await page.evaluate(() => navigator.serviceWorker.ready);
 const [name, value] = customerCookie.split('=');
 await page.setCookie({ name, value, url: base });
-await page.reload({ waitUntil: 'networkidle0' });
+await page.reload({ waitUntil: 'load' });
 await page.evaluate(() => navigator.serviceWorker.ready);
 await new Promise(r => setTimeout(r, 1500)); // allow any SW caching to settle
 
@@ -47,7 +47,7 @@ await page.evaluate(() => {
 });
 await new Promise(r => setTimeout(r, 800));
 await Promise.all([
-  page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 15000 }).catch(() => undefined),
+  page.waitForNavigation({ waitUntil: 'load', timeout: 15000 }).catch(() => undefined),
   page.evaluate(() => {
     const btns = [...document.querySelectorAll('button')];
     const b = btns.find(x => x.textContent?.includes('Sign out'));

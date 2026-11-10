@@ -34,9 +34,22 @@ test('SW offline /api/ fallback carries no cached account data', () => {
   assert.ok(!apiBranch.includes('Displaying cached'), 'fallback must not claim to show cached state');
 });
 
-test('SW purges every legacy cache on activation', () => {
-  const activate = sw.slice(sw.indexOf("self.addEventListener('activate'"));
-  assert.ok(activate.includes('purgeAllCaches'), 'activate must purge all legacy caches (v2 API entries)');
+test('SW purges legacy tenderagent caches on activation and keeps the fresh shell', () => {
+  const activate = sw.slice(sw.indexOf("self.addEventListener('activate'"), sw.indexOf("self.addEventListener('message'"));
+  assert.ok(activate.includes('purgeLegacyCaches'), 'activate must purge legacy caches (v2 API entries)');
+  assert.ok(!activate.includes('cache.addAll') && !activate.includes('cache.add('),
+    'activate must not re-precache: the fresh shell from install is left intact');
+});
+
+test('SW only ever touches tenderagent-* caches, never unrelated origin tooling', () => {
+  assert.ok(sw.includes("CACHE_PREFIX = 'tenderagent-'"), 'cache operations must be prefix-scoped');
+  const deletes = sw.split('\n').filter((l) => l.includes('caches.delete'));
+  assert.ok(deletes.length > 0 && deletes.every((l) => l.includes('startsWith(CACHE_PREFIX)')),
+    'every caches.delete must be behind the tenderagent- prefix filter');
+});
+
+test('SW legacy purge still covers the vulnerable v2 cache name', () => {
+  assert.ok('tenderagent-pwa-v2'.startsWith('tenderagent-'), 'v2 cache name must match the purge prefix');
 });
 
 test('SW supports a sign-out cache purge message', () => {

@@ -20,6 +20,7 @@ interface AccountInfo {
  */
 export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange }) => {
   const [info, setInfo] = useState<AccountInfo | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (!auth) {
@@ -33,9 +34,23 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
   }, [auth]);
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
-    // No account data may outlive the session on this device: purge every
-    // CacheStorage entry (legacy service-worker builds cached /api/ GETs,
+    setLogoutError(null);
+    // The server session must end first: a failed or aborted request leaves
+    // the account signed in, and silently reloading would re-auth the
+    // dashboard and look like a successful sign-out. Say so explicitly.
+    let res: Response;
+    try {
+      res = await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      setLogoutError('Sign out failed - no connection. You are still signed in.');
+      return;
+    }
+    if (!res.ok) {
+      setLogoutError('Sign out failed on the server. You are still signed in - please try again.');
+      return;
+    }
+    // No account data may outlive the session on this device: purge this app's
+    // CacheStorage entries (legacy service-worker builds cached /api/ GETs,
     // including the company profile) and reload for a clean in-memory slate.
     try {
       if (navigator.serviceWorker?.controller) {
@@ -43,7 +58,8 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
       }
       if ('caches' in window) {
         const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
+        // Only tenderagent-* keys are ours; other same-origin tooling is left alone.
+        await Promise.all(keys.filter((k) => k.startsWith('tenderagent-')).map((k) => caches.delete(k)));
       }
     } catch {
       // Best effort - the reload below still drops all in-memory state.
@@ -80,6 +96,11 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
             <LogOut className="w-3.5 h-3.5" /> Sign out
           </button>
         </div>
+        {logoutError && (
+          <p role="alert" className={`mt-3 text-xs font-medium ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>
+            {logoutError}
+          </p>
+        )}
 
         {/* Workspace identifiers: the operator copies their own user ID into
             the deployment environment (ADMIN_USER_IDS) to manage platform

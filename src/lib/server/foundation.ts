@@ -25,6 +25,13 @@ export interface Foundation {
   /** Auth + entitlement guards for spend-bearing routes. Mount after sessionMiddleware. */
   guardMiddleware: (req: Request, res: Response, next: NextFunction) => void;
   /**
+   * Sets Cache-Control: no-store on API responses. Authenticated and
+   * tenant-scoped payloads (auth/me, profile, tenant feeds) must never sit in
+   * the browser HTTP cache or a shared intermediary: the service worker is a
+   * second boundary, not the only one.
+   */
+  apiCacheHeaders: (req: Request, res: Response, next: NextFunction) => void;
+  /**
    * May this request consume a paid SerpApi lookup? True only for a signed-in
    * tenant with an active subscription and allowance remaining - in EVERY mode,
    * so the public demo can never burn paid credits. In guarded mode the guard
@@ -407,6 +414,11 @@ function applyReadyInvariant(app: BidApplication): void {
   router.use(accountRouter);
   router.use('/applications', applicationsRouter);
 
+  const apiCacheHeaders = (req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  };
+
   const guardMiddleware = async (req: Request, res: Response, next: NextFunction) => {
     if (!config.authRequired) {
       next();
@@ -440,5 +452,5 @@ function applyReadyInvariant(app: BidApplication): void {
     }
   };
 
-  return { config, repos, originCheckMiddleware, sessionMiddleware, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
+  return { config, repos, originCheckMiddleware, sessionMiddleware, apiCacheHeaders, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
 }

@@ -66,6 +66,7 @@ app.use(express.json({ limit: '50mb' }));
 
 // Foundation: session resolution, subscription guards (no-op unless AUTH_REQUIRED=true), auth/account routes
 app.use(foundation.originCheckMiddleware);
+app.use('/api', foundation.apiCacheHeaders);
 app.use(foundation.sessionMiddleware);
 app.use(foundation.guardMiddleware);
 app.use('/api', foundation.router);

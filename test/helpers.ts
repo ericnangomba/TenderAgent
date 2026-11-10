@@ -33,6 +33,7 @@ export async function startTestApp(configOverrides: Partial<FoundationConfig> = 
   app.use('/api/billing/webhook', foundation.webhookRouter);
   app.use(express.json());
   app.use(foundation.originCheckMiddleware);
+app.use('/api', foundation.apiCacheHeaders);
   app.use(foundation.sessionMiddleware);
   app.use(foundation.guardMiddleware);
   app.use('/api', foundation.router);
