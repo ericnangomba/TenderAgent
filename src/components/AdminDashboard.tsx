@@ -1,3 +1,4 @@
+import { BetaPanel } from './BetaPanel';
 import React, { useEffect, useState } from 'react';
 import { Activity, Building2, Users, CreditCard, Gauge, Server } from 'lucide-react';
 
@@ -17,10 +18,9 @@ interface Health {
 }
 
 /**
- * Operator dashboard: aggregate-only platform statistics from /api/admin/*
- * (server-enforced requireAdmin) plus the public health echo. No per-tenant
- * rows, no emails, no secrets - counts are enough for settings and
- * performance checks.
+ * Operator dashboard: platform statistics and private beta administration.
+ * API controls from /api/admin/*
+ * are server-enforced requireAdmin. Only the beta panel lists accounts.
  */
 export const AdminDashboard: React.FC = () => {
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -31,7 +31,7 @@ export const AdminDashboard: React.FC = () => {
     fetch('/api/admin/overview')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`overview ${r.status}`))))
       .then((d) => setOverview(d.overview))
-      .catch((e) => setError(e.message));
+      .catch(() => setError('Current operator statistics are unavailable. Refresh to retry.'));
     fetch('/api/health')
       .then((r) => r.json())
       .then(setHealth)
@@ -47,13 +47,15 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
-        <h2 className="font-display text-2xl font-semibold text-[#14201C]">Platform overview</h2>
-        <p className="text-sm text-stone-500 mt-1">Aggregate operator statistics. Individual workspaces are never listed here.</p>
+        <h2 className="font-display text-2xl font-semibold text-[#14201C]">Operations dashboard</h2>
+        <p className="text-sm text-stone-500 mt-1">Manage registered accounts, beta access, usage and notifications. Company and bidder-profile setup are not required.</p>
       </div>
 
       {error && (
         <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">Could not load overview: {error}</div>
       )}
+
+      <BetaPanel />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className={stat}>

@@ -1945,6 +1945,29 @@ var TenantWorkCoordinator = class {
   }
 };
 
+// src/lib/server/betaPilot.ts
+function pilotEntitlement(c, tenantId, now) {
+  return {
+    tenantId,
+    planId: "test_cohort",
+    status: "active",
+    currentPeriodEnd: new Date(c.endsAt),
+    cancelAtPeriodEnd: true,
+    providerName: "operator_comp",
+    providerSubscriptionRef: `beta:${c.id}`,
+    refundedAt: null,
+    lastEventAt: now,
+    lastEventId: `beta:${c.id}`,
+    updatedAt: now
+  };
+}
+function pilotOpen(c, now) {
+  return Boolean(c && +now >= Date.parse(c.startsAt) && +now < Date.parse(c.endsAt));
+}
+function matchingPilotEntitlement(e, c) {
+  return Boolean(e && e.planId === "test_cohort" && e.status === "active" && e.providerName === "operator_comp" && e.providerSubscriptionRef === `beta:${c.id}` && e.currentPeriodEnd?.getTime() === Date.parse(c.endsAt) && !e.refundedAt);
+}
+
 // src/lib/server/repos/memory.ts
 function createMemoryRepos() {
   const tenants = /* @__PURE__ */ new Map();
@@ -1956,6 +1979,9 @@ function createMemoryRepos() {
   const billingEventIds = /* @__PURE__ */ new Map();
   const usage = /* @__PURE__ */ new Map();
   const profiles = /* @__PURE__ */ new Map();
+  let pilotCampaign = null;
+  const pilotChanges = [];
+  const pilotInvites = /* @__PURE__ */ new Map();
   const applications = /* @__PURE__ */ new Map();
   const clone = (v) => structuredClone(v);
   const repos = {
@@ -1976,9 +2002,57 @@ function createMemoryRepos() {
         for (const [id, v] of applications) if (v.tenantId === tenantId) applications.delete(id);
         for (const [id, v] of usage) if (v.tenantId === tenantId) usage.delete(id);
         for (const [id, v] of billingEventIds) if (v.tenantId === tenantId) billingEventIds.delete(id);
+        for (const [id, invite] of pilotInvites) if (invite.tenantId === tenantId) pilotInvites.delete(id);
         profiles.delete(tenantId);
         entitlements.delete(tenantId);
         tenants.delete(tenantId);
+      }
+    },
+    pilot: {
+      async campaign() {
+        return clone(pilotCampaign);
+      },
+      async start(c) {
+        if (!pilotCampaign) {
+          pilotCampaign = clone(c);
+          pilotChanges.push({ action: "started", actorId: c.createdBy, userId: null, at: c.startsAt });
+        }
+        return clone(pilotCampaign);
+      },
+      async failure(actorId, action, now) {
+        pilotChanges.push({ action, actorId, userId: null, at: now.toISOString() });
+      },
+      async changes() {
+        return clone(pilotChanges.slice(-100).reverse());
+      },
+      async revoke(userId, tenantId, actorId, now) {
+        const user = usersById.get(userId), ent = entitlements.get(tenantId);
+        if (!user || user.tenantId !== tenantId || !ent || ent.planId !== "test_cohort" || ent.status !== "active") throw new Error("pilot_unavailable");
+        entitlements.set(tenantId, { ...ent, status: "cancelled", updatedAt: now });
+        pilotChanges.push({ action: "revoked", actorId, userId, at: now.toISOString() });
+      },
+      async accounts(query) {
+        return [...usersById.values()].filter((u) => u.email.includes(query.toLowerCase()) || tenants.get(u.tenantId)?.companyName.toLowerCase().includes(query.toLowerCase())).slice(0, 50).map((u) => {
+          const i = pilotInvites.get(u.id), e = entitlements.get(u.tenantId);
+          return { userId: u.id, tenantId: u.tenantId, email: u.email, companyName: tenants.get(u.tenantId)?.companyName || "", status: e?.planId === "test_cohort" && (!pilotOpen(pilotCampaign, /* @__PURE__ */ new Date()) || !e.currentPeriodEnd || e.currentPeriodEnd <= /* @__PURE__ */ new Date()) ? "cancelled" : e?.status || "none", planId: e?.planId || null, analyses: usage.get(`${u.tenantId}:beta_pilot_v1`)?.analyses || 0, lookups: usage.get(`${u.tenantId}:beta_pilot_v1`)?.serpapiLookups || 0, hasSavedProfile: profiles.has(u.tenantId), issuedAt: i?.issuedAt || null, redeemedAt: i?.redeemedAt || null };
+        });
+      },
+      async issue(i) {
+        const u = usersById.get(i.userId);
+        if (!pilotOpen(pilotCampaign, new Date(i.issuedAt)) || pilotCampaign.id !== i.campaignId || !u || u.tenantId !== i.tenantId || !tenants.has(i.tenantId) || entitlements.has(i.tenantId) || pilotInvites.get(i.userId)?.redeemedAt) throw new Error("pilot_unavailable");
+        pilotInvites.set(i.userId, clone(i));
+        pilotChanges.push({ action: "code_issued", actorId: i.issuedBy, userId: i.userId, at: i.issuedAt });
+      },
+      async redeem(userId, codeHash, now) {
+        const i = pilotInvites.get(userId), u = usersById.get(userId);
+        if (!pilotOpen(pilotCampaign, now) || !i || i.campaignId !== pilotCampaign.id || i.codeHash !== codeHash || !u || u.tenantId !== i.tenantId || !tenants.has(i.tenantId)) throw new Error("pilot_unavailable");
+        const existing = entitlements.get(i.tenantId);
+        if (existing && (!i.redeemedAt || !matchingPilotEntitlement(existing, pilotCampaign))) throw new Error("pilot_unavailable");
+        const ent = existing || pilotEntitlement(pilotCampaign, i.tenantId, now);
+        entitlements.set(i.tenantId, clone(ent));
+        if (!i.redeemedAt) pilotChanges.push({ action: "redeemed", actorId: userId, userId, at: now.toISOString() });
+        i.redeemedAt ||= now.toISOString();
+        return clone(ent);
       }
     },
     beta: {
@@ -2668,7 +2742,21 @@ function createFoundation(options = {}) {
   }
   const repos = options.repos || createMemoryRepos();
   const providers = options.providers || defaultBillingProviders(config);
-  const sessionMiddleware = createSessionMiddleware(repos);
+  const resolveSessionMiddleware = createSessionMiddleware(repos);
+  const sessionMiddleware = async (req, res, next) => {
+    try {
+      if (repos.pilot && req.path.startsWith("/api/")) {
+        const campaign2 = await repos.pilot.campaign();
+        if (campaign2) {
+          if (config.betaCampaign && !config.betaCampaign.managed) throw new Error("conflicting_beta_configuration");
+          config.betaCampaign = { ...campaign2, managed: true, invites: [] };
+        } else if (config.betaCampaign?.managed) throw new Error("managed_campaign_missing");
+      }
+      await resolveSessionMiddleware(req, res, next);
+    } catch {
+      res.status(503).json({ success: false, error: "account_service_unavailable" });
+    }
+  };
   const coordinator = new TenantWorkCoordinator(3e4, 64, options.requestLeaseMs);
   const tenantWorkMiddleware = (req, res, next) => {
     if (!req.auth || !config.accountDeletionEnabled) {
@@ -2782,6 +2870,88 @@ function createFoundation(options = {}) {
       res.status(500).json({ success: false, error: err.message });
     }
   });
+  const pilotOperatorAttempts = /* @__PURE__ */ new Map();
+  const pilotWriteLimit = (req, res, next) => {
+    const now = Date.now();
+    for (const [id, v] of pilotOperatorAttempts) if (v.until <= now) pilotOperatorAttempts.delete(id);
+    const key = req.auth.userId, value = pilotOperatorAttempts.get(key) || { count: 0, until: now + 6e4 };
+    if (value.count >= 20) {
+      res.status(429).json({ success: false, error: "too_many_attempts" });
+      return;
+    }
+    value.count++;
+    pilotOperatorAttempts.set(key, value);
+    next();
+  };
+  adminRouter.get("/beta", requireAdmin, async (req, res) => {
+    if (!repos.pilot) {
+      res.status(409).json({ success: false, error: "pilot_store_unavailable" });
+      return;
+    }
+    try {
+      const query = typeof req.query.q === "string" ? req.query.q.slice(0, 100) : "";
+      res.json({ success: true, campaign: await repos.pilot.campaign(), accounts: await repos.pilot.accounts(query), changes: await repos.pilot.changes(), legacyConfigured: Boolean(config.betaCampaign && !config.betaCampaign.managed) });
+    } catch {
+      res.status(503).json({ success: false, error: "pilot_status_unavailable" });
+    }
+  });
+  adminRouter.post("/beta/start", requireAdmin, pilotWriteLimit, async (req, res) => {
+    if (!repos.pilot || config.betaCampaign && !config.betaCampaign.managed) {
+      res.status(409).json({ success: false, error: "pilot_setup_unavailable" });
+      return;
+    }
+    if (req.body?.confirmation !== "START SHARED SEVEN DAY BETA") {
+      res.status(400).json({ success: false, error: "confirmation_required" });
+      return;
+    }
+    const now = /* @__PURE__ */ new Date();
+    try {
+      const campaign2 = await repos.pilot.start({ id: `pilot-${randomBytes4(12).toString("hex")}`, startsAt: now.toISOString(), endsAt: new Date(+now + 7 * 864e5).toISOString(), createdBy: req.auth.userId });
+      config.betaCampaign = { ...campaign2, managed: true, invites: [] };
+      res.json({ success: true, campaign: campaign2 });
+    } catch {
+      await repos.pilot.failure(req.auth.userId, "start_failed", /* @__PURE__ */ new Date()).catch(() => void 0);
+      res.status(503).json({ success: false, error: "pilot_start_unconfirmed" });
+    }
+  });
+  adminRouter.post("/beta/revoke", requireAdmin, pilotWriteLimit, async (req, res) => {
+    const { userId, tenantId } = req.body || {};
+    if (!repos.pilot || typeof userId !== "string" || typeof tenantId !== "string" || req.body?.confirmation !== "REVOKE BETA ACCESS") {
+      res.status(400).json({ success: false, error: "account_confirmation_required" });
+      return;
+    }
+    try {
+      await repos.pilot.revoke(userId, tenantId, req.auth.userId, /* @__PURE__ */ new Date());
+      res.json({ success: true });
+    } catch {
+      await repos.pilot.failure(req.auth.userId, "revoke_failed", /* @__PURE__ */ new Date()).catch(() => void 0);
+      res.status(409).json({ success: false, error: "beta_revoke_not_confirmed" });
+    }
+  });
+  adminRouter.post("/beta/issue", requireAdmin, pilotWriteLimit, async (req, res) => {
+    if (!repos.pilot || config.betaCampaign && !config.betaCampaign.managed) {
+      res.status(409).json({ success: false, error: "pilot_setup_unavailable" });
+      return;
+    }
+    const { userId, tenantId } = req.body || {};
+    if (typeof userId !== "string" || typeof tenantId !== "string" || req.body?.confirmation !== "ISSUE ACCOUNT BOUND CODE") {
+      res.status(400).json({ success: false, error: "account_confirmation_required" });
+      return;
+    }
+    try {
+      const campaign2 = await repos.pilot.campaign();
+      if (!campaign2) {
+        res.status(409).json({ success: false, error: "pilot_not_started" });
+        return;
+      }
+      const code = randomBytes4(24).toString("base64url");
+      await repos.pilot.issue({ userId, tenantId, campaignId: campaign2.id, codeHash: createHash3("sha256").update(code).digest("hex"), issuedBy: req.auth.userId, issuedAt: (/* @__PURE__ */ new Date()).toISOString(), redeemedAt: null });
+      res.json({ success: true, code, userId, tenantId, endsAt: campaign2.endsAt });
+    } catch {
+      await repos.pilot.failure(req.auth.userId, "issue_failed", /* @__PURE__ */ new Date()).catch(() => void 0);
+      res.status(409).json({ success: false, error: "pilot_code_not_issued" });
+    }
+  });
   adminRouter.post("/test-access/grant", requireAdmin, async (req, res) => {
     res.status(409).json({ success: false, error: "beta_code_redemption_required" });
   });
@@ -2889,7 +3059,7 @@ function createFoundation(options = {}) {
       success: true,
       account: {
         beta: {
-          redeemAvailable: Boolean(repos.beta && config.betaCampaign && config.betaCampaign.invites.length > 0 && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
+          redeemAvailable: Boolean(repos.beta && config.betaCampaign && (config.betaCampaign.managed || config.betaCampaign.invites.length > 0) && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
           endsAt: config.betaCampaign?.endsAt || null
         },
         accountDeletionAvailable: config.accountDeletionEnabled && Boolean(repos.accountDeletion),
@@ -2916,6 +3086,23 @@ function createFoundation(options = {}) {
     attempts.count++;
     betaAttempts.set(key, attempts);
     const code = req.body?.code;
+    if (c?.managed && repos.pilot) {
+      if (typeof code !== "string" || code.length < 24 || code.length > 256) {
+        res.status(400).json({ success: false, error: "invalid_or_expired_beta_code" });
+        return;
+      }
+      try {
+        const ent = await repos.pilot.redeem(key, createHash3("sha256").update(code).digest("hex"), now);
+        if (entitlementStatus(ent, config, /* @__PURE__ */ new Date()) !== "active") {
+          res.status(409).json({ success: false, error: "beta_access_unavailable" });
+          return;
+        }
+        res.json({ success: true, endsAt: ent.currentPeriodEnd });
+      } catch {
+        res.status(400).json({ success: false, error: "invalid_or_expired_beta_code" });
+      }
+      return;
+    }
     if (!c || !repos.beta || now < new Date(c.startsAt) || now >= new Date(c.endsAt) || typeof code !== "string" || code.length < 24 || code.length > 256 || !c.invites.some((i) => i.userId === key && i.codeHash === createHash3("sha256").update(code).digest("hex"))) {
       res.status(400).json({ success: false, error: "invalid_or_expired_beta_code" });
       return;
@@ -3451,7 +3638,118 @@ function createMongoRepos() {
 
 // src/lib/server/repos/postgres.ts
 import { Pool } from "pg";
+
+// src/lib/server/repos/postgresPilot.ts
+import { randomBytes as randomBytes5 } from "node:crypto";
+function campaign(r) {
+  return r ? { id: r.id, startsAt: new Date(r.starts_at).toISOString(), endsAt: new Date(r.ends_at).toISOString(), createdBy: r.created_by } : null;
+}
+function entitlement(r) {
+  return r ? { tenantId: r.tenant_id, planId: r.plan_id, status: r.status, currentPeriodEnd: r.current_period_end && new Date(r.current_period_end), cancelAtPeriodEnd: r.cancel_at_period_end, providerName: r.provider_name, providerSubscriptionRef: r.provider_subscription_ref, refundedAt: r.refunded_at && new Date(r.refunded_at), lastEventAt: r.last_event_at && new Date(r.last_event_at), lastEventId: r.last_event_id, updatedAt: new Date(r.updated_at) } : null;
+}
+function createPostgresPilot(pool) {
+  const transaction = async (fn) => {
+    const db = await pool.connect();
+    try {
+      await db.query("BEGIN");
+      const result = await fn(db);
+      await db.query("COMMIT");
+      return result;
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    } finally {
+      db.release();
+    }
+  };
+  const record = async (db, action, actorId, userId, now, eventId = randomBytes5(16).toString("hex")) => {
+    await db.query("INSERT INTO foundation_beta_changes (id,action,actor_id,user_id,at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING", [eventId, action, actorId, userId, now]);
+  };
+  return {
+    async campaign() {
+      return campaign((await pool.query("SELECT * FROM foundation_beta_campaign WHERE singleton=1")).rows[0]);
+    },
+    async failure(actorId, action, now) {
+      await record(pool, action, actorId, null, now);
+    },
+    async changes() {
+      return (await pool.query("SELECT action,actor_id,user_id,at FROM foundation_beta_changes ORDER BY at DESC,id DESC LIMIT 100")).rows.map((r) => ({ action: r.action, actorId: r.actor_id, userId: r.user_id, at: new Date(r.at).toISOString() }));
+    },
+    async revoke(userId, tenantId, actorId, now) {
+      await transaction(async (db) => {
+        const r = await db.query("UPDATE foundation_entitlements SET status='cancelled',updated_at=$1 WHERE tenant_id=$2 AND plan_id='test_cohort' AND status='active' AND EXISTS (SELECT 1 FROM foundation_users WHERE id=$3 AND tenant_id=$2)", [now, tenantId, userId]);
+        if (r.rowCount !== 1) throw new Error("pilot_unavailable");
+        await record(db, "revoked", actorId, userId, now);
+      });
+    },
+    async start(c) {
+      return transaction(async (db) => {
+        await db.query(`INSERT INTO foundation_beta_campaign (singleton,id,starts_at,ends_at,created_by) VALUES (1,$1,$2,$3,$4) ON CONFLICT (singleton) DO NOTHING`, [c.id, c.startsAt, c.endsAt, c.createdBy]);
+        const stored = campaign((await db.query("SELECT * FROM foundation_beta_campaign WHERE singleton=1")).rows[0]);
+        await record(db, "started", stored.createdBy, null, new Date(stored.startsAt), `started:${stored.id}`);
+        return stored;
+      });
+    },
+    async accounts(query) {
+      const rows = (await pool.query(`SELECT u.id,u.tenant_id,u.email,t.company_name,e.status,e.plan_id,e.current_period_end,i.issued_at,i.redeemed_at,COALESCE(usage.analyses,0) AS analyses,COALESCE(usage.serpapi_lookups,0) AS lookups,CASE WHEN p.tenant_id IS NULL THEN false ELSE true END AS has_profile
+        FROM foundation_users u JOIN foundation_tenants t ON t.id=u.tenant_id
+        LEFT JOIN foundation_entitlements e ON e.tenant_id=u.tenant_id
+        LEFT JOIN foundation_beta_invites i ON i.user_id=u.id
+        LEFT JOIN foundation_profiles p ON p.tenant_id=u.tenant_id
+        LEFT JOIN foundation_usage_counters usage ON usage.tenant_id=u.tenant_id AND usage.period_key='beta_pilot_v1'
+        WHERE u.email ILIKE $1 OR t.company_name ILIKE $1 ORDER BY u.created_at DESC,u.id LIMIT 50`, [`%${query}%`])).rows;
+      return rows.map((r) => ({ userId: r.id, tenantId: r.tenant_id, email: r.email, companyName: r.company_name, status: r.plan_id === "test_cohort" && (!r.current_period_end || new Date(r.current_period_end) <= /* @__PURE__ */ new Date()) ? "cancelled" : r.status || "none", planId: r.plan_id || null, analyses: Number(r.analyses), lookups: Number(r.lookups), hasSavedProfile: r.has_profile, issuedAt: r.issued_at ? new Date(r.issued_at).toISOString() : null, redeemedAt: r.redeemed_at ? new Date(r.redeemed_at).toISOString() : null }));
+    },
+    async issue(i) {
+      await transaction(async (db) => {
+        const c = campaign((await db.query("SELECT * FROM foundation_beta_campaign WHERE singleton=1 FOR UPDATE")).rows[0]);
+        const u = (await db.query("SELECT u.tenant_id FROM foundation_users u JOIN foundation_tenants t ON t.id=u.tenant_id WHERE u.id=$1", [i.userId])).rows[0];
+        const e = (await db.query("SELECT tenant_id FROM foundation_entitlements WHERE tenant_id=$1", [i.tenantId])).rows[0];
+        if (!pilotOpen(c, new Date(Math.max(Date.parse(i.issuedAt), Date.now()))) || c.id !== i.campaignId || !u || u.tenant_id !== i.tenantId || e) throw new Error("pilot_unavailable");
+        const result = await db.query(`INSERT INTO foundation_beta_invites (user_id,tenant_id,campaign_id,code_hash,issued_by,issued_at,redeemed_at)
+        VALUES ($1,$2,$3,$4,$5,$6,NULL) ON CONFLICT (user_id) DO UPDATE SET code_hash=EXCLUDED.code_hash,issued_by=EXCLUDED.issued_by,issued_at=EXCLUDED.issued_at
+        WHERE foundation_beta_invites.redeemed_at IS NULL AND foundation_beta_invites.campaign_id=EXCLUDED.campaign_id AND foundation_beta_invites.tenant_id=EXCLUDED.tenant_id`, [i.userId, i.tenantId, i.campaignId, i.codeHash, i.issuedBy, i.issuedAt]);
+        if (result.rowCount !== 1) throw new Error("pilot_unavailable");
+        await record(db, "code_issued", i.issuedBy, i.userId, new Date(i.issuedAt));
+      });
+    },
+    async redeem(userId, codeHash, now) {
+      return transaction(async (db) => {
+        const c = campaign((await db.query("SELECT * FROM foundation_beta_campaign WHERE singleton=1 FOR UPDATE")).rows[0]);
+        const i = (await db.query("SELECT * FROM foundation_beta_invites WHERE user_id=$1 FOR UPDATE", [userId])).rows[0];
+        const u = (await db.query("SELECT u.tenant_id FROM foundation_users u JOIN foundation_tenants t ON t.id=u.tenant_id WHERE u.id=$1", [userId])).rows[0];
+        const checkedAt = new Date(Math.max(+now, Date.now()));
+        if (!pilotOpen(c, checkedAt) || !i || i.code_hash !== codeHash || i.campaign_id !== c.id || !u || u.tenant_id !== i.tenant_id) throw new Error("pilot_unavailable");
+        const previous = entitlement((await db.query("SELECT * FROM foundation_entitlements WHERE tenant_id=$1 FOR UPDATE", [i.tenant_id])).rows[0]);
+        if (previous && (!i.redeemed_at || !matchingPilotEntitlement(previous, c))) throw new Error("pilot_unavailable");
+        const e = pilotEntitlement(c, i.tenant_id, checkedAt);
+        const result = await db.query(`INSERT INTO foundation_entitlements (tenant_id,plan_id,status,current_period_end,cancel_at_period_end,provider_name,provider_subscription_ref,refunded_at,last_event_at,last_event_id,updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9,$8) ON CONFLICT (tenant_id) DO NOTHING`, [e.tenantId, e.planId, e.status, e.currentPeriodEnd, e.cancelAtPeriodEnd, e.providerName, e.providerSubscriptionRef, checkedAt, e.lastEventId]);
+        const confirmed = entitlement((await db.query("SELECT * FROM foundation_entitlements WHERE tenant_id=$1 FOR UPDATE", [i.tenant_id])).rows[0]);
+        if (!matchingPilotEntitlement(confirmed, c) || !previous && result.rowCount !== 1) throw new Error("pilot_unavailable");
+        if (!i.redeemed_at) await record(db, "redeemed", userId, userId, checkedAt);
+        await db.query("UPDATE foundation_beta_invites SET redeemed_at=COALESCE(redeemed_at,$1) WHERE user_id=$2", [checkedAt, userId]);
+        return confirmed;
+      });
+    }
+  };
+}
+
+// src/lib/server/repos/postgres.ts
 var POSTGRES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS foundation_beta_changes (
+  id text PRIMARY KEY, action text NOT NULL, actor_id text NOT NULL, user_id text, at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS foundation_beta_campaign (
+  singleton integer PRIMARY KEY CHECK (singleton = 1),
+  id text UNIQUE NOT NULL, starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL,
+  created_by text NOT NULL, CHECK (ends_at = starts_at + interval '7 days')
+);
+CREATE TABLE IF NOT EXISTS foundation_beta_invites (
+  user_id text PRIMARY KEY, tenant_id text NOT NULL, campaign_id text NOT NULL,
+  code_hash text UNIQUE NOT NULL, issued_by text NOT NULL, issued_at timestamptz NOT NULL,
+  redeemed_at timestamptz
+);
 CREATE TABLE IF NOT EXISTS foundation_tenants (
   id text PRIMARY KEY,
   company_name text NOT NULL,
@@ -3619,6 +3917,7 @@ function toApplication(row) {
 }
 function createPostgresRepos(pool, tenantConstraintsReady = false) {
   return {
+    pilot: typeof pool.connect === "function" ? createPostgresPilot(pool) : void 0,
     accountDeletion: tenantConstraintsReady && typeof pool.connect === "function" ? {
       erase: (tenantId) => erasePostgresTenant(pool, tenantId)
     } : void 0,

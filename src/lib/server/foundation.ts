@@ -123,7 +123,19 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
   const repos = options.repos || createMemoryRepos();
   const providers = options.providers || defaultBillingProviders(config);
 
-  const sessionMiddleware = createSessionMiddleware(repos);
+  const resolveSessionMiddleware = createSessionMiddleware(repos);
+  const sessionMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (repos.pilot && req.path.startsWith('/api/')) {
+        const campaign = await repos.pilot.campaign();
+        if (campaign) {
+          if (config.betaCampaign && !config.betaCampaign.managed) throw new Error('conflicting_beta_configuration');
+          config.betaCampaign = { ...campaign, managed: true, invites: [] };
+        } else if (config.betaCampaign?.managed) throw new Error('managed_campaign_missing');
+      }
+      await resolveSessionMiddleware(req, res, next);
+    } catch { res.status(503).json({ success: false, error: 'account_service_unavailable' }); }
+  };
   const coordinator = new TenantWorkCoordinator(30_000, 64, options.requestLeaseMs);
   const tenantWorkMiddleware = (req: Request, res: Response, next: NextFunction): void => {
     if (!req.auth || !config.accountDeletionEnabled) { next(); return; }
@@ -262,6 +274,51 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     }
   });
 
+  // App-managed pilot: requireAdmin is ID-based, never an email bootstrap.
+  const pilotOperatorAttempts = new Map<string, { count: number; until: number }>();
+  const pilotWriteLimit = (req: Request, res: Response, next: NextFunction) => {
+    const now = Date.now();
+    for (const [id, v] of pilotOperatorAttempts) if (v.until <= now) pilotOperatorAttempts.delete(id);
+    const key = req.auth!.userId, value = pilotOperatorAttempts.get(key) || { count: 0, until: now + 60000 };
+    if (value.count >= 20) { res.status(429).json({ success: false, error: 'too_many_attempts' }); return; }
+    value.count++; pilotOperatorAttempts.set(key, value); next();
+  };
+  adminRouter.get('/beta', requireAdmin, async (req: Request, res: Response) => {
+    if (!repos.pilot) { res.status(409).json({ success: false, error: 'pilot_store_unavailable' }); return; }
+    try {
+      const query = typeof req.query.q === 'string' ? req.query.q.slice(0, 100) : '';
+      res.json({ success: true, campaign: await repos.pilot.campaign(), accounts: await repos.pilot.accounts(query), changes: await repos.pilot.changes(), legacyConfigured: Boolean(config.betaCampaign && !config.betaCampaign.managed) });
+    } catch { res.status(503).json({ success: false, error: 'pilot_status_unavailable' }); }
+  });
+  adminRouter.post('/beta/start', requireAdmin, pilotWriteLimit, async (req: Request, res: Response) => {
+    if (!repos.pilot || (config.betaCampaign && !config.betaCampaign.managed)) { res.status(409).json({ success: false, error: 'pilot_setup_unavailable' }); return; }
+    if (req.body?.confirmation !== 'START SHARED SEVEN DAY BETA') { res.status(400).json({ success: false, error: 'confirmation_required' }); return; }
+    const now = new Date();
+    try {
+      const campaign = await repos.pilot.start({ id: `pilot-${randomBytes(12).toString('hex')}`, startsAt: now.toISOString(), endsAt: new Date(+now + 7 * 86400000).toISOString(), createdBy: req.auth!.userId });
+      config.betaCampaign = { ...campaign, managed: true, invites: [] };
+      res.json({ success: true, campaign });
+    } catch { await repos.pilot.failure(req.auth!.userId, 'start_failed', new Date()).catch(() => undefined); res.status(503).json({ success: false, error: 'pilot_start_unconfirmed' }); }
+  });
+  adminRouter.post('/beta/revoke', requireAdmin, pilotWriteLimit, async (req: Request, res: Response) => {
+    const { userId, tenantId } = req.body || {};
+    if (!repos.pilot || typeof userId !== 'string' || typeof tenantId !== 'string' || req.body?.confirmation !== 'REVOKE BETA ACCESS') { res.status(400).json({ success: false, error: 'account_confirmation_required' }); return; }
+    try { await repos.pilot.revoke(userId, tenantId, req.auth!.userId, new Date()); res.json({ success: true }); }
+    catch { await repos.pilot.failure(req.auth!.userId, 'revoke_failed', new Date()).catch(() => undefined); res.status(409).json({ success: false, error: 'beta_revoke_not_confirmed' }); }
+  });
+  adminRouter.post('/beta/issue', requireAdmin, pilotWriteLimit, async (req: Request, res: Response) => {
+    if (!repos.pilot || (config.betaCampaign && !config.betaCampaign.managed)) { res.status(409).json({ success: false, error: 'pilot_setup_unavailable' }); return; }
+    const { userId, tenantId } = req.body || {};
+    if (typeof userId !== 'string' || typeof tenantId !== 'string' || req.body?.confirmation !== 'ISSUE ACCOUNT BOUND CODE') { res.status(400).json({ success: false, error: 'account_confirmation_required' }); return; }
+    try {
+      const campaign = await repos.pilot.campaign();
+      if (!campaign) { res.status(409).json({ success: false, error: 'pilot_not_started' }); return; }
+      const code = randomBytes(24).toString('base64url');
+      await repos.pilot.issue({ userId, tenantId, campaignId: campaign.id, codeHash: createHash('sha256').update(code).digest('hex'), issuedBy: req.auth!.userId, issuedAt: new Date().toISOString(), redeemedAt: null });
+      res.json({ success: true, code, userId, tenantId, endsAt: campaign.endsAt });
+    } catch { await repos.pilot.failure(req.auth!.userId, 'issue_failed', new Date()).catch(() => undefined); res.status(409).json({ success: false, error: 'pilot_code_not_issued' }); }
+  });
+
   // Operator-granted complimentary tester access. No billing provider is
   // involved: a grant writes a test_cohort entitlement directly, attributed
   // to the granting operator, time-bounded and revocable. Server-side
@@ -365,7 +422,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     res.json({
       success: true,
       account: {
-        beta: { redeemAvailable: Boolean(repos.beta && config.betaCampaign && config.betaCampaign.invites.length > 0 && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
+        beta: { redeemAvailable: Boolean(repos.beta && config.betaCampaign && (config.betaCampaign.managed || config.betaCampaign.invites.length > 0) && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
           endsAt: config.betaCampaign?.endsAt || null },
         accountDeletionAvailable: config.accountDeletionEnabled && Boolean(repos.accountDeletion),
         tenantId: req.auth.tenantId,
@@ -396,6 +453,15 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     }
     attempts.count++; betaAttempts.set(key, attempts);
     const code = req.body?.code;
+    if (c?.managed && repos.pilot) {
+      if (typeof code !== 'string' || code.length < 24 || code.length > 256) { res.status(400).json({ success: false, error: 'invalid_or_expired_beta_code' }); return; }
+      try {
+        const ent = await repos.pilot.redeem(key, createHash('sha256').update(code).digest('hex'), now);
+        if (entitlementStatus(ent, config, new Date()) !== 'active') { res.status(409).json({ success: false, error: 'beta_access_unavailable' }); return; }
+        res.json({ success: true, endsAt: ent.currentPeriodEnd });
+      } catch { res.status(400).json({ success: false, error: 'invalid_or_expired_beta_code' }); }
+      return;
+    }
     if (!c || !repos.beta || now < new Date(c.startsAt) || now >= new Date(c.endsAt)
       || typeof code !== 'string' || code.length < 24 || code.length > 256
       || !c.invites.some(i => i.userId === key && i.codeHash === createHash('sha256').update(code).digest('hex'))) {

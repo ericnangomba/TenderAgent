@@ -16,6 +16,8 @@ interface SidebarProps {
   isDarkMode: boolean;
   /** Server-derived operator flag: shows the administration section. */
   isAdmin?: boolean;
+  operationsMode?: boolean;
+  onSwitchWorkspace?: () => void;
   userProfile: IUserProfile;
   isProcessing?: boolean;
   isSampleProfile?: boolean;
@@ -43,6 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   isDarkMode,
   isAdmin = false,
+  operationsMode = false,
+  onSwitchWorkspace,
   userProfile,
   isSampleProfile,
   isProcessing
@@ -119,8 +123,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     items: [
       {
         key: 'admin' as TabKey,
-        label: 'Platform Overview',
-        description: 'Usage & system status',
+        label: 'Operations dashboard',
+        description: 'Users, beta access & notifications',
         icon: LayoutDashboard
       },
       {
@@ -145,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ]
   };
 
-  const visibleSections = isAdmin ? [...navSections, adminSection] : navSections;
+  const visibleSections = isAdmin ? operationsMode ? [adminSection, { title:'OPERATOR ACCOUNT',items:navSections[2].items.map(item => ({...item,description:'Sign-in & role details'})) }] : [...navSections,adminSection] : navSections;
 
   return (
     <>
@@ -275,8 +279,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className={`p-4 border-t ${isDarkMode ? 'border-slate-800/80 bg-slate-950/60' : 'border-slate-200/80 bg-slate-50/70'
           } space-y-3`}>
 
-          {/* Active Profile Info */}
-          <button
+          {isAdmin && <button onClick={() => { onSwitchWorkspace?.(); onCloseMobile(); }} className="w-full text-left p-2.5 rounded-lg border text-xs font-medium bg-white">{operationsMode ? 'Open customer workspace' : 'Return to operations'}</button>}
+          {/* Customer profile is optional and separate from operations. */}
+          {!operationsMode && <button
             onClick={() => { setActiveTab('vault'); onCloseMobile(); }}
             className={`w-full text-left p-2.5 rounded-lg border text-xs transition-colors ${isDarkMode ? 'bg-slate-900/80 border-slate-800 hover:bg-slate-900' : 'bg-white border-slate-200 hover:border-emerald-300'
               }`}
@@ -305,7 +310,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <ChevronRight className="w-3.5 h-3.5 text-emerald-600" />
               </div>
             )}
-          </button>
+          </button>}
 
 
         </div>

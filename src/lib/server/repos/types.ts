@@ -89,6 +89,7 @@ export interface TenantProfile {
 import type { BidApplication } from '../readiness';
 
 export interface FoundationRepos {
+  pilot?: import('../betaPilot').PilotStore;
   /** Fail-closed where the driver cannot guarantee atomic whole-account erasure. */
   accountDeletion?: { erase(tenantId: string): Promise<void> };
 

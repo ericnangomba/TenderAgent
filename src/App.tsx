@@ -34,28 +34,25 @@ export default function App() {
   const [isSkeletonModalOpen, setIsSkeletonModalOpen] = useState<boolean>(false);
   const [recentSpans, setRecentSpans] = useState<ISentrySpanRecord[]>([]);
   const [auth, setAuth] = useState<AuthState | null>(null);
+  const [customerMode, setCustomerMode] = useState(false);
+  const operationsMode = Boolean(auth?.isAdmin) && !customerMode;
 
   // Restore an existing session on load.
   useEffect(() => {
     fetch('/api/auth/me')
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
-        if (d?.success) setAuth({ tenantId: d.tenantId, email: d.email, userId: d.userId, isAdmin: Boolean(d.isAdmin) });
+        if (d?.success) { setAuth({ tenantId: d.tenantId, email: d.email, userId: d.userId, isAdmin: Boolean(d.isAdmin) }); setActiveTab(d.isAdmin ? 'admin' : 'analyzer'); }
       })
       .catch(() => undefined);
   }, []);
 
   const handleAuthChange = (next: AuthState | null) => {
     setAuth(next);
-    // Reset before loading for the new identity: a previous workspace's
-    // profile/status must never bleed into this one, even without a reload.
+    setCustomerMode(false);
+    setActiveTab(next?.isAdmin ? 'admin' : 'analyzer');
     setUserProfile(EMPTY_PROFILE);
     setProfileStatus('loading');
-    // Profile is per-workspace once signed in - reload it for the new identity.
-    fetch('/api/profile')
-      .then(r => r.json())
-      .then(d => { if (d.success && d.profile) { setUserProfile(prev => ({ ...prev, ...d.profile })); setProfileStatus('ready'); } else { setProfileStatus('unavailable'); } })
-      .catch(() => setProfileStatus('unavailable'));
   };
 
   // POPIA SME Profile
@@ -74,11 +71,14 @@ export default function App() {
   // Distinct from a KNOWN empty profile: views must not treat it as empty or overwrite it.
   const [profileStatus, setProfileStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
 
-  // Load profile from server on mount
+  // Customer profile is not an operator onboarding dependency.
   useEffect(() => {
+    if (!auth || operationsMode) { setUserProfile(EMPTY_PROFILE); return; }
+    let current = true;
     fetch('/api/profile')
       .then(r => r.json())
       .then(data => {
+        if (!current) return;
         if (data.success && data.profile) {
           setUserProfile(prev => ({ ...prev, ...data.profile }));
           setProfileStatus('ready');
@@ -86,8 +86,9 @@ export default function App() {
           setProfileStatus('unavailable');
         }
       })
-      .catch(() => setProfileStatus('unavailable'));
-  }, []);
+      .catch(() => { if (current) setProfileStatus('unavailable'); });
+    return () => { current = false; };
+  }, [auth?.userId, operationsMode]);
 
   const handleOpenSkeleton = (skeleton?: IBidResponseSkeleton) => {
     if (skeleton && skeleton.sections) {
@@ -158,6 +159,8 @@ export default function App() {
         isDarkMode={isDarkMode}
         userProfile={userProfile}
         isAdmin={Boolean(auth?.isAdmin)}
+        operationsMode={operationsMode}
+        onSwitchWorkspace={() => { setCustomerMode(!customerMode); setActiveTab(customerMode ? 'admin' : 'analyzer'); }}
         isSampleProfile={!auth}
       />
 
@@ -170,7 +173,8 @@ export default function App() {
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           isDarkMode={isDarkMode}
           isAdmin={Boolean(auth?.isAdmin)}
-          companyName={userProfile.companyName || auth?.email || ''}
+          operationsMode={operationsMode}
+          companyName={operationsMode ? auth.email : userProfile.companyName || auth.email}
           taxPinOnFile={Boolean(userProfile.taxComplianceStatusPin)}
           isSampleProfile={!auth}
         />
@@ -255,6 +259,7 @@ export default function App() {
               isDarkMode={isDarkMode}
               auth={auth}
               onAuthChange={handleAuthChange}
+              operationsMode={operationsMode}
             />
           )}
                   </ViewErrorBoundary>
@@ -264,7 +269,7 @@ export default function App() {
         <footer className={`py-5 px-6 border-t text-xs ${isDarkMode ? 'border-slate-800 bg-slate-950 text-slate-500' : 'border-slate-200 bg-white text-slate-500'
           }`}>
           <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-            <span>TenderAgent · South African tender workspace</span>
+            <span>{operationsMode ? 'TenderAgent · Operations' : 'TenderAgent · South African tender workspace'}</span>
           </div>
         </footer>
 

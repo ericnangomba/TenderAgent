@@ -9,6 +9,7 @@
  * the same guarantee the memory driver gets from the single-threaded loop.
  */
 import { Pool } from 'pg';
+import { createPostgresPilot } from './postgresPilot';
 import { AccountDeletionError } from '../accountLifecycle';
 import type {
   FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile,
@@ -21,6 +22,19 @@ export interface PoolLike {
 }
 
 export const POSTGRES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS foundation_beta_changes (
+  id text PRIMARY KEY, action text NOT NULL, actor_id text NOT NULL, user_id text, at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS foundation_beta_campaign (
+  singleton integer PRIMARY KEY CHECK (singleton = 1),
+  id text UNIQUE NOT NULL, starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL,
+  created_by text NOT NULL, CHECK (ends_at = starts_at + interval '7 days')
+);
+CREATE TABLE IF NOT EXISTS foundation_beta_invites (
+  user_id text PRIMARY KEY, tenant_id text NOT NULL, campaign_id text NOT NULL,
+  code_hash text UNIQUE NOT NULL, issued_by text NOT NULL, issued_at timestamptz NOT NULL,
+  redeemed_at timestamptz
+);
 CREATE TABLE IF NOT EXISTS foundation_tenants (
   id text PRIMARY KEY,
   company_name text NOT NULL,
@@ -208,6 +222,7 @@ function toApplication(row: any): BidApplication {
 
 export function createPostgresRepos(pool: PoolLike, tenantConstraintsReady = false): FoundationRepos {
   return {
+    pilot: typeof (pool as any).connect === 'function' ? createPostgresPilot(pool as any) : undefined,
     accountDeletion: tenantConstraintsReady && typeof (pool as any).connect === 'function' ? {
       erase: (tenantId: string) => erasePostgresTenant(pool as DeletionPool, tenantId),
     } : undefined,

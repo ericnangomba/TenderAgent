@@ -4,6 +4,7 @@ import type { AuthState } from './AuthCard';
 
 interface AccountProps {
   isDarkMode: boolean;
+  operationsMode?: boolean;
   auth: AuthState | null;
   onAuthChange: (auth: AuthState | null) => void;
 }
@@ -20,7 +21,7 @@ interface AccountInfo {
  * Signed-in workspace account view: identity, subscription status and usage.
  * Sign-in/registration lives on the landing page (AuthCard), not here.
  */
-export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange }) => {
+export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange, operationsMode = false }) => {
   const [betaCode, setBetaCode] = useState('');
   const [betaMessage, setBetaMessage] = useState('');
   const [betaBusy, setBetaBusy] = useState(false);
@@ -65,8 +66,10 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
       if (!res.ok) { setBetaMessage(res.status === 429 ? 'Too many attempts. Wait ten minutes.' : 'Code not accepted. It may be expired or not available for this account.'); return; }
       const account = await fetch('/api/account');
       if (!account.ok) throw new Error('refresh');
-      const d = await account.json(); setInfo(d.account);
-      setBetaMessage('Beta access is active. No payment was taken.');
+      const d = await account.json();
+      if (!d.success || d.account?.entitlement?.planId !== 'test_cohort' || d.account.entitlement.effectiveStatus !== 'active') throw new Error('unconfirmed');
+      setInfo(d.account);
+      setBetaMessage('Beta access confirmed active. No payment was taken. Your shared end date and pilot allowance are shown below.');
     } catch { setBetaMessage('Could not confirm access. Refresh your account before trying again.'); }
     finally { setBetaBusy(false); }
   };
@@ -155,6 +158,14 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
   const statusLabel: Record<string, string> = {
     none: 'No active subscription', active: 'Subscription active', past_due: 'Payment outstanding', cancelled: 'Subscription cancelled',
   };
+  if (operationsMode) return <section className={card}>
+    <h2 className="font-display text-xl font-semibold">Operator account</h2>
+    <p className="text-sm mt-3 break-words">{auth?.email}</p>
+    <p className="text-sm text-stone-600 mt-2">Administrator access is assigned to your account ID. No company registration, bidder profile or paid subscription is required to use operations controls.</p>
+    <p className="text-xs mt-3 break-all text-stone-500">Account ID {auth?.userId}</p>
+    <button onClick={logout} className="mt-4 rounded-lg border px-4 py-2 text-sm">Sign out</button>
+    {logoutError && <p role="alert" className="text-red-700 text-sm mt-3">{logoutError}</p>}
+  </section>;
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className={card}>

@@ -44,6 +44,7 @@ export function getPlan(planId: string | null | undefined, plans: Plan[] = PLANS
 }
 
 export interface BetaCampaign {
+  managed?: boolean;
   id: string;
   startsAt: string;
   endsAt: string;

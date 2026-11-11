@@ -81,3 +81,67 @@ the existing active beta status and limits without a code prompt in direct-only
 campaigns. A late approved tester uses the unchanged campaign ID/end and receives
 only the remaining time. Account-specific confirmation after deployment and the
 separately approved real tester analysis remain live operator checks.
+
+## App-managed onboarding and operations dashboard
+
+The normal operator workflow is now in the authenticated Operations dashboard.
+Coolify is needed for the initial application rollout, not per-tester setup.
+Existing admin account IDs still come from `ADMIN_USER_IDS`; a signup email or
+company name cannot grant an admin role. Admin sign-in lands on Operations, with
+no company or bidder-profile prerequisite. Customer tools are a separate,
+explicit navigation choice. New customer registrations do not receive analysis
+access until their selected-account code is successfully redeemed.
+
+Postgres and memory support the app-managed pilot. Postgres adds three new,
+non-destructive tables: one immutable campaign, account-bound invite hashes,
+and an append-only change record. Mongo fails closed for this option. The
+operator starts the one shared seven-day window with an explicit in-app
+confirmation. Deployment, sign-in, listing accounts and code issuance do not
+restart that clock. No campaign is seeded automatically. Legacy environment
+campaign configuration must be absent; conflicting sources fail closed.
+
+The operator searches registered accounts by company/email, selects the stored
+account and checks its identity. Issuing a code uses server-generated random
+24-byte data, displays the 32-character value once, and stores only SHA256.
+No codes/hashes are included in the admin list, audit feed, URLs or logs. The
+operator copies it privately to the approved tester/operator. An unused code
+can be replaced, immediately invalidating the old one. Paid, revoked or prior
+entitlements are never overwritten. This release sends no email or other
+external notification. Notification delivery is in the admin dashboard, with
+server-confirmed recent activity and a separate full change record.
+
+Redemption locks the campaign and invite in a database transaction, verifies
+the signed-in selected account, campaign time and existing entitlement, uses
+insert-only entitlement creation, verifies the resulting shape, and records
+redemption and audit before commit. A failure rolls the entire transaction
+back. The cutoff is checked after waiting for the campaign lock. Concurrent
+paid writes arbitrate on the entitlement primary key; beta cannot replace
+one. A retry of a successfully redeemed code returns the original entitlement
+without extending the end or resetting usage. Revocation prevents reactivation.
+
+The operator sees pilot-total usage, saved-profile presence (not private profile
+fields or uploaded files), current access and issue/redemption timestamps.
+Admin notifications/status refresh every 30 seconds while visible, paused while
+a private code is displayed. Failed refreshes are labelled stale. An explicit
+selected-account revoke cancels beta access without deleting saved data. The
+change record includes actor/target IDs and time for campaign start, issuance,
+redemption and revocation. It does not give arbitrary database, billing,
+impersonation or production deletion controls.
+
+Release testing includes memory/HTTP flow, pg-mem SQL-adapter checks, and
+real disposable loopback Postgres tests for concurrent start/redemption/cap,
+restart persistence, rollback after audit failure, racing paid insertion,
+revocation preservation and expiry after lock wait. These tests never accept
+production database URLs. Live deployment and Eric's existing admin sign-in
+still require confirmation; a local passing test is not live access proof.
+
+Operational limits: a campaign-storage failure closes the whole API with a
+sanitized 503 response rather than serving stale access decisions. The static
+UI can still load, but account operations need storage recovery. This is
+intentional fail-closed behavior, not full service availability. If revoke
+races a first redemption, revoke can report not confirmed (409); refresh and
+retry after the grant settles. A successful revoke remains authoritative.
+The monitoring console is not an infrastructure log reader or external
+telemetry system. It shows privacy-limited account/usage/access events and
+sanitized operator failures. Tender text, tax PINs, passwords, code hashes,
+private profile fields and uploaded documents never enter these payloads.

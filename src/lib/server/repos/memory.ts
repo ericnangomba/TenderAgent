@@ -3,6 +3,7 @@ import type {
   FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile,
 } from './types';
 import { AccountDeletionError, hasExternalBilling } from '../accountLifecycle';
+import { pilotOpen, pilotEntitlement, matchingPilotEntitlement, type PilotCampaign, type PilotInvite, type PilotChange } from '../betaPilot';
 import type { BidApplication } from '../readiness';
 
 export function createMemoryRepos(): FoundationRepos {
@@ -15,6 +16,9 @@ export function createMemoryRepos(): FoundationRepos {
   const billingEventIds = new Map<string, BillingEventRecord>();
   const usage = new Map<string, UsageCounter>();
   const profiles = new Map<string, TenantProfile>();
+  let pilotCampaign: PilotCampaign | null = null;
+  const pilotChanges: PilotChange[] = [];
+  const pilotInvites = new Map<string, PilotInvite>();
   const applications = new Map<string, BidApplication>();
 
   const clone = <T>(v: T): T => structuredClone(v);
@@ -33,7 +37,43 @@ export function createMemoryRepos(): FoundationRepos {
         for (const [id, v] of applications) if (v.tenantId === tenantId) applications.delete(id);
         for (const [id, v] of usage) if (v.tenantId === tenantId) usage.delete(id);
         for (const [id, v] of billingEventIds) if (v.tenantId === tenantId) billingEventIds.delete(id);
+        for (const [id, invite] of pilotInvites) if (invite.tenantId === tenantId) pilotInvites.delete(id);
         profiles.delete(tenantId); entitlements.delete(tenantId); tenants.delete(tenantId);
+      },
+    },
+    pilot: {
+      async campaign() { return clone(pilotCampaign); },
+      async start(c) { if (!pilotCampaign) { pilotCampaign = clone(c); pilotChanges.push({action:'started',actorId:c.createdBy,userId:null,at:c.startsAt}); } return clone(pilotCampaign); },
+      async failure(actorId, action, now) { pilotChanges.push({action,actorId,userId:null,at:now.toISOString()}); },
+      async changes() { return clone(pilotChanges.slice(-100).reverse()); },
+      async revoke(userId, tenantId, actorId, now) {
+        const user = usersById.get(userId), ent = entitlements.get(tenantId);
+        if (!user || user.tenantId !== tenantId || !ent || ent.planId !== 'test_cohort' || ent.status !== 'active') throw new Error('pilot_unavailable');
+        entitlements.set(tenantId, { ...ent, status: 'cancelled', updatedAt: now });
+        pilotChanges.push({action:'revoked',actorId,userId,at:now.toISOString()});
+      },
+      async accounts(query) {
+        return [...usersById.values()].filter(u => u.email.includes(query.toLowerCase()) || tenants.get(u.tenantId)?.companyName.toLowerCase().includes(query.toLowerCase())).slice(0, 50).map(u => {
+          const i = pilotInvites.get(u.id), e = entitlements.get(u.tenantId);
+          return { userId: u.id, tenantId: u.tenantId, email: u.email, companyName: tenants.get(u.tenantId)?.companyName || '', status: e?.planId === 'test_cohort' && (!pilotOpen(pilotCampaign, new Date()) || !e.currentPeriodEnd || e.currentPeriodEnd <= new Date()) ? 'cancelled' : e?.status || 'none', planId: e?.planId || null, analyses: usage.get(`${u.tenantId}:beta_pilot_v1`)?.analyses || 0, lookups: usage.get(`${u.tenantId}:beta_pilot_v1`)?.serpapiLookups || 0, hasSavedProfile: profiles.has(u.tenantId), issuedAt: i?.issuedAt || null, redeemedAt: i?.redeemedAt || null };
+        });
+      },
+      async issue(i) {
+        const u = usersById.get(i.userId);
+        if (!pilotOpen(pilotCampaign, new Date(i.issuedAt)) || pilotCampaign.id !== i.campaignId || !u || u.tenantId !== i.tenantId || !tenants.has(i.tenantId) || entitlements.has(i.tenantId) || pilotInvites.get(i.userId)?.redeemedAt) throw new Error('pilot_unavailable');
+        pilotInvites.set(i.userId, clone(i));
+        pilotChanges.push({action:'code_issued',actorId:i.issuedBy,userId:i.userId,at:i.issuedAt});
+      },
+      async redeem(userId, codeHash, now) {
+        const i = pilotInvites.get(userId), u = usersById.get(userId);
+        if (!pilotOpen(pilotCampaign, now) || !i || i.campaignId !== pilotCampaign.id || i.codeHash !== codeHash || !u || u.tenantId !== i.tenantId || !tenants.has(i.tenantId)) throw new Error('pilot_unavailable');
+        const existing = entitlements.get(i.tenantId);
+        if (existing && (!i.redeemedAt || !matchingPilotEntitlement(existing, pilotCampaign))) throw new Error('pilot_unavailable');
+        const ent = existing || pilotEntitlement(pilotCampaign, i.tenantId, now);
+        entitlements.set(i.tenantId, clone(ent));
+        if (!i.redeemedAt) pilotChanges.push({action:'redeemed',actorId:userId,userId,at:now.toISOString()});
+        i.redeemedAt ||= now.toISOString();
+        return clone(ent);
       },
     },
     beta: {

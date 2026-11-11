@@ -10,6 +10,7 @@ interface HeaderProps {
   isDarkMode: boolean;
   /** Operator flag: technical model-status pill shows for admins only. */
   isAdmin?: boolean;
+  operationsMode?: boolean;
   companyName?: string;
   taxPinOnFile: boolean;
   isSampleProfile: boolean;
@@ -20,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenMobileSidebar,
   isDarkMode,
   isAdmin = false,
+  operationsMode = false,
   companyName,
   taxPinOnFile,
   isSampleProfile
@@ -64,11 +66,13 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   React.useEffect(() => {
-    scanLocalModels();
-  }, []);
+    if (!operationsMode) scanLocalModels();
+  }, [operationsMode]);
 
   const getTabLabel = (key: TabKey) => {
     switch (key) {
+      case 'admin': return 'Operations dashboard';
+      case 'account': return operationsMode ? 'Operator account' : 'Account';
       case 'analyzer': return 'Tender compliance check';
       case 'discovery': return 'Live tender feed';
       case 'finetuning': return 'LLM Dataset & LoRA Fine-Tuning Studio';
@@ -128,7 +132,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
 
         {/* Local model status pill (operator-only) */}
-        {isAdmin && (
+        {isAdmin && !operationsMode && (
         <div className="relative">
           <button
             onClick={() => setIsModelModalOpen(!isModelModalOpen)}
@@ -222,11 +226,11 @@ export const Header: React.FC<HeaderProps> = ({
               {companyName}
             </div>
             <div className={`text-[10px] font-medium ${isSampleProfile ? 'text-amber-600' : taxPinOnFile ? 'text-emerald-600' : 'text-slate-400'}`}>
-              {isSampleProfile ? 'Sample profile' : taxPinOnFile ? 'TCS PIN on file' : 'TCS PIN not set'}
+              {operationsMode ? 'Administrator' : isSampleProfile ? 'Sample profile' : taxPinOnFile ? 'TCS PIN on file' : 'TCS PIN not set'}
             </div>
           </div>
           <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 flex items-center justify-center font-bold text-xs">
-            AZ
+            {operationsMode ? 'OP' : 'TA'}
           </div>
         </div>
       </div>
