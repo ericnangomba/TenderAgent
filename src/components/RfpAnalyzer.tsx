@@ -508,14 +508,14 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
 
             {/* Reference ID & Raw Text Preview Area */}
             <div className="space-y-3 mb-5">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tender Reference ID:</span>
                 <input
                   type="text"
                   value={referenceId}
                   onChange={(e) => setReferenceId(e.target.value)}
                   placeholder="e.g. SEDA/2026/01 or RT57-2026-ICT"
-                  className={`border rounded px-2.5 py-1 text-xs font-mono flex-1 focus:outline-none focus:border-emerald-500 ${isDarkMode
+                  className={`border rounded px-2.5 py-1 text-xs font-mono min-w-0 w-full flex-1 focus:outline-none focus:border-emerald-500 ${isDarkMode
                       ? 'bg-slate-950 border-slate-800 text-slate-200'
                       : 'bg-slate-50 border-slate-300 text-slate-800'
                     }`}
