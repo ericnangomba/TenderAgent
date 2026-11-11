@@ -36,6 +36,12 @@ export function createMemoryRepos(): FoundationRepos {
         profiles.delete(tenantId); entitlements.delete(tenantId); tenants.delete(tenantId);
       },
     },
+    beta: {
+      async redeem(e) {
+        if (!tenants.has(e.tenantId)) throw new Error('tenant_missing');
+        if (!entitlements.has(e.tenantId)) entitlements.set(e.tenantId, clone(e));
+      },
+    },
     tenants: {
       async create(t) { tenants.set(t.id, clone(t)); },
       async getById(id) { const t = tenants.get(id); return t ? clone(t) : null; },

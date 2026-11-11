@@ -55,8 +55,8 @@ export const Header: React.FC<HeaderProps> = ({
         detectedModels: [],
         hasGemma: false,
         hasLlama31: false,
-        cloudFailoverActive: true,
-        message: 'Cloud LLM Failover active (Gemini 2.5 Flash / Statutory Engine).'
+        cloudFailoverActive: false,
+        message: 'No local runner detected. Provider access depends on account permissions.'
       });
     } finally {
       setIsDetecting(false);
@@ -118,7 +118,7 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
             <span className={`text-xs ${isDarkMode ? 'text-slate-600' : 'text-slate-300'}`}>/</span>
           </div>
-          <h1 className={`text-xs sm:text-sm font-semibold tracking-tight leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          <h1 className={`min-w-0 truncate text-xs sm:text-sm font-semibold tracking-tight leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
             {getTabLabel(activeTab)}
           </h1>
         </div>
@@ -141,10 +141,10 @@ export const Header: React.FC<HeaderProps> = ({
             <span className={`w-2 h-2 rounded-full shrink-0 ${detectorReport?.hasGemma || detectorReport?.hasLlama31 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
               }`} />
             <span className="hidden sm:inline font-semibold text-[11px] whitespace-nowrap">
-              {detectorReport?.hasGemma ? 'Local: Gemma 2 Online' : detectorReport?.hasLlama31 ? 'Local: Llama 3.1 8B' : 'Cloud AI mode'}
+              {detectorReport?.hasGemma ? 'Local: Gemma 2 Online' : detectorReport?.hasLlama31 ? 'Local: Llama 3.1 8B' : 'Local runner not detected'}
             </span>
             <span className="sm:hidden font-bold text-[10px] whitespace-nowrap">
-              {detectorReport?.hasGemma ? 'Gemma 2' : detectorReport?.hasLlama31 ? 'Llama 3' : 'Cloud'}
+              {detectorReport?.hasGemma ? 'Gemma 2' : detectorReport?.hasLlama31 ? 'Llama 3' : 'No runner'}
             </span>
             <span className="text-[9px] px-1 py-0.5 rounded bg-black/10 dark:bg-white/10 font-mono hidden xs:inline-flex items-center gap-0.5">
               <Shield className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />

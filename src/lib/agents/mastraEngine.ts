@@ -414,8 +414,8 @@ ${rawText.slice(0, 10000)}`;
       points: points || null,
       technicalThreshold: 70
     },
-    modelUsed: 'Statutory Procurement Heuristics Engine (Offline Safe)',
-    failoverOccurred: true,
+    modelUsed: 'Rule-based procurement preview (no language model)',
+    failoverOccurred: config.provider !== 'statutory',
     failoverLogs
   };
 }
@@ -494,7 +494,7 @@ export async function executeRfpPipeline({
   const sanitizedText = redactPii(workingText);
   await new Promise(r => setTimeout(r, 60));
   finalizeSpan(popiaSpan, 'success', { bytesSanitized: workingText.length, scope: 'supported tender-text patterns only' });
-  addTrace(`[Privacy] A short excerpt of this document is kept with the analysis record. Pattern matching is limited; unrecognized personal details can remain.`);
+  addTrace(`[Privacy] A short excerpt of this document is included in this response. Pattern matching is limited; unrecognized personal details can remain.`);
 
   // Gemma 2 / Llama 3.1 8B LLM Extraction Step
   addTrace(`[Mastra Engine] Booting localized agent context using active LLM (${activeLlmConfig.modelId})...`);
@@ -577,7 +577,7 @@ export async function executeRfpPipeline({
     referenceNumber: savedRecord.referenceNumber,
     complianceScore: "Extraction complete - confirm requirements against the tender\u2019s own returnables list"
   });
-  addTrace(`[Sentry Trace] Finalizing transaction loop. Generated structured bid skeleton (.docx ready). Total execution latency: ${Date.now() - startTime}ms.`);
+  addTrace(`[Sentry Trace] Finalizing transaction loop. Generated structured bid skeleton (Word-compatible .doc export). Total execution latency: ${Date.now() - startTime}ms.`);
 
   return {
     record: savedRecord,

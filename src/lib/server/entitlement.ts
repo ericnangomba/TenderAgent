@@ -28,6 +28,7 @@ export function emptyEntitlement(tenantId: string): Entitlement {
 /** Status as of `now`, applying period expiry lazily so no cron job is required. */
 export function effectiveStatus(ent: Entitlement | null, now: Date, graceDays: number): EffectiveStatus {
   if (!ent || !ent.status) return 'none';
+  if (ent.planId === 'test_cohort' && (!ent.currentPeriodEnd || now.getTime() >= ent.currentPeriodEnd.getTime())) return 'cancelled';
   if (ent.status === 'cancelled') return 'cancelled';
   if (ent.currentPeriodEnd && now.getTime() > ent.currentPeriodEnd.getTime()) {
     if (ent.cancelAtPeriodEnd) return 'cancelled';
@@ -35,6 +36,14 @@ export function effectiveStatus(ent: Entitlement | null, now: Date, graceDays: n
     return now.getTime() > graceEnd ? 'cancelled' : 'past_due';
   }
   return ent.status;
+}
+
+/** Campaign closure is authoritative even for an already redeemed entitlement. */
+export function entitlementStatus(ent: Entitlement | null, config: FoundationConfig, now: Date = new Date()): EffectiveStatus {
+  if (ent?.planId === 'test_cohort' && (!config.betaCampaign
+    || ent.providerSubscriptionRef !== `beta:${config.betaCampaign.id}`
+    || now < new Date(config.betaCampaign.startsAt) || now >= new Date(config.betaCampaign.endsAt))) return 'cancelled';
+  return effectiveStatus(ent, now, config.pastDueGraceDays);
 }
 
 export interface ApplyResult {
@@ -137,7 +146,7 @@ export async function authorizeAndConsume(
   now: Date = new Date(),
 ): Promise<AccessDecision> {
   const ent = await repos.entitlements.get(tenantId);
-  const status = effectiveStatus(ent, now, config.pastDueGraceDays);
+  const status = entitlementStatus(ent, config, now);
 
   if (status === 'none') return { allowed: false, reason: 'no_subscription', status };
   if (status === 'cancelled' || status === 'past_due') {
@@ -147,12 +156,12 @@ export async function authorizeAndConsume(
   const plan = getPlan(ent?.planId, config.plans);
   if (!plan) return { allowed: false, reason: 'unknown_plan', status };
 
-  const limit = action === 'analysis' ? plan.includedAnalyses : plan.includedSerpapiLookups;
+  const limit = ent?.planId === 'test_cohort' ? (action === 'analysis' ? 20 : 0) : (action === 'analysis' ? plan.includedAnalyses : plan.includedSerpapiLookups);
   const field = action === 'analysis' ? 'analyses' : 'serpapiLookups';
-  const claim = await repos.usage.tryConsume(tenantId, currentPeriodKey(now), field, limit);
+  const claim = await repos.usage.tryConsume(tenantId, usagePeriodKey(ent, now), field, limit);
   if (!claim.allowed) return { allowed: false, reason: 'plan_limit_reached', status };
 
-  return { allowed: true, status };
+  return { allowed: true, status, periodKey: usagePeriodKey(ent, now) };
 }
 
 export type GatedAction = 'analysis' | 'serpapi';
@@ -161,6 +170,11 @@ export interface AccessDecision {
   allowed: boolean;
   reason?: 'no_subscription' | 'subscription_inactive' | 'plan_limit_reached' | 'unknown_plan';
   status?: EffectiveStatus;
+  periodKey?: string;
+}
+
+export function usagePeriodKey(ent: Entitlement | null, now: Date = new Date()): string {
+  return ent?.planId === 'test_cohort' ? 'beta_pilot_v1' : currentPeriodKey(now);
 }
 
 export function currentPeriodKey(now: Date = new Date()): string {
@@ -175,22 +189,22 @@ export async function checkAccess(
   now: Date = new Date(),
 ): Promise<AccessDecision> {
   const ent = await repos.entitlements.get(tenantId);
-  const status = effectiveStatus(ent, now, config.pastDueGraceDays);
+  const status = entitlementStatus(ent, config, now);
 
   if (status === 'none') return { allowed: false, reason: 'no_subscription', status };
   if (status === 'cancelled' || status === 'past_due') {
     return { allowed: false, reason: 'subscription_inactive', status };
   }
 
-  const plan = getPlan(ent?.planId);
+  const plan = getPlan(ent?.planId, config.plans);
   if (!plan) return { allowed: false, reason: 'unknown_plan', status };
 
-  const usage = await repos.usage.get(tenantId, currentPeriodKey(now));
+  const usage = await repos.usage.get(tenantId, usagePeriodKey(ent, now));
   const used = action === 'analysis' ? usage.analyses : usage.serpapiLookups;
-  const limit = action === 'analysis' ? plan.includedAnalyses : plan.includedSerpapiLookups;
+  const limit = ent?.planId === 'test_cohort' ? (action === 'analysis' ? 20 : 0) : (action === 'analysis' ? plan.includedAnalyses : plan.includedSerpapiLookups);
   if (used >= limit) return { allowed: false, reason: 'plan_limit_reached', status };
 
-  return { allowed: true, status };
+  return { allowed: true, status, periodKey: usagePeriodKey(ent, now) };
 }
 
 export async function recordUsage(

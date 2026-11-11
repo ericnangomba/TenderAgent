@@ -1,3 +1,6 @@
+// src/lib/utils/privacyCopy.ts
+var DOCUMENT_REDACTION_NOTICE = "Tender-text redaction matches 13-16 digit ID/card-like runs, email addresses, SA phone numbers in contiguous, spaced or +27 forms, and VAT-like numbers. Dash-separated local phones, names, physical addresses and other personal details can still pass through. This is not a guarantee that a document is safe to share with cloud AI.";
+
 // server.ts
 import express from "express";
 import { createServer as createViteServer } from "vite";
@@ -10,73 +13,55 @@ import dotenv from "dotenv";
 import * as Sentry from "@sentry/node";
 import { GoogleGenAI } from "@google/genai";
 
-// src/lib/models/Tender.ts
-import mongoose, { Schema } from "mongoose";
-var TenderSchema = new Schema({
-  title: { type: String, required: true },
-  referenceNumber: { type: String, required: true, unique: true },
-  issuingDepartment: { type: String, required: true },
-  closingDate: { type: Date, required: true },
-  cidbGradingRequired: { type: String },
-  estimatedBudget: { type: String },
-  province: { type: String, default: "National / South Africa" },
-  category: { type: String, default: "General" },
-  extractedComplianceChecklist: {
-    csdRequired: { type: Boolean, default: true },
-    sarsPinRequired: { type: Boolean, default: true },
-    bbbeeRequired: { type: Boolean, default: true },
-    coidaRequired: { type: Boolean, default: false },
-    additionalDocuments: [{ type: String }]
-  },
-  evaluationCriteria: {
-    preferencePointsSystem: { type: String, enum: ["80/20", "90/10", "unknown"], default: "80/20" },
-    technicalThresholdPercentage: { type: Number, default: 70 }
-  },
-  rawTextExcerpt: { type: String },
-  createdAt: { type: Date, default: Date.now }
-});
-var TenderModel = mongoose.models && mongoose.models.Tender ? mongoose.models.Tender : mongoose.model("Tender", TenderSchema);
-var Tender_default = TenderModel;
+// src/lib/utils/redactPii.ts
+function redactPii(text) {
+  return text.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[CONFIDENTIAL_POPIA_REDACTED]").replace(/\+27[ -]?\d{2}[ -]?\d{3}[ -]?\d{4}|\b0\d{9}\b|\b0\d{2} \d{3} \d{4}\b/g, "[CONFIDENTIAL_POPIA_REDACTED]").replace(/\b4\d{9}\b/g, "[CONFIDENTIAL_POPIA_REDACTED]").replace(/\b(?:\d[ -]*?){13,16}\b/g, "[CONFIDENTIAL_POPIA_REDACTED]");
+}
 
 // src/lib/utils/skeletonGenerator.ts
 function generateBidResponseSkeleton(tenderData, companyProfile) {
-  const company = companyProfile || {
-    companyName: "Apex Strategic Solutions (Pty) Ltd",
-    registrationNumber: "2023/849201/07",
-    csdNumber: "MAAA0821945",
-    taxComplianceStatusPin: "TCS-9482104-Z",
-    bbbeeLevel: 1,
+  const PLACEHOLDERS = {
+    companyName: "[Your registered company name]",
+    registrationNumber: "",
+    csdNumber: "",
+    taxComplianceStatusPin: "",
+    bbbeeLevel: 0,
     bbbeeType: "EME",
-    cidbGrading: "7CE PE",
-    coidaGoodStandingValid: true,
-    coidaExpiryDate: "2027-04-30",
-    contactEmail: "tenders@apexstrategic.co.za",
-    contactPhone: "+27 (0)11 482 9200",
-    province: "Gauteng"
+    cidbGrading: "",
+    coidaGoodStandingValid: false,
+    coidaExpiryDate: "",
+    contactEmail: "[Contact email]",
+    contactPhone: "[Contact phone]",
+    province: "[Province]"
   };
-  const tenderRef = tenderData.referenceNumber || "RFP-REF-2026";
+  const company = { ...PLACEHOLDERS, ...Object.fromEntries(
+    Object.entries(companyProfile || {}).filter(([, v]) => v !== void 0 && v !== null && v !== "")
+  ) };
+  if (!company.companyName) company.companyName = PLACEHOLDERS.companyName;
+  const tenderRef = tenderData.referenceNumber || "[Tender reference - confirm from the tender document]";
   const tenderTitle = tenderData.title || "Procurement of Goods & Services";
   const dept = tenderData.issuingDepartment || tenderData.dept || "Organ of State";
-  const points = tenderData.evaluationCriteria?.preferencePointsSystem || tenderData.points || "80/20";
+  const rawPoints = tenderData.evaluationCriteria?.preferencePointsSystem || tenderData.points;
+  const points = rawPoints === "80/20" || rawPoints === "90/10" ? rawPoints : String(rawPoints || "").includes("90") ? "90/10" : String(rawPoints || "").includes("80") ? "80/20" : null;
   return {
     tenderReference: tenderRef,
     tenderTitle,
     issuingDepartment: dept,
-    closingDate: String(tenderData.closingDate || "2026-11-30"),
+    closingDate: tenderData.closingDate ? String(tenderData.closingDate) : "Confirm in the tender document",
     bidderProfile: company,
     sections: [
       {
         title: "Section 1: Executive Summary & Bidder Eligibility Declaration",
         description: "Formal statement of compliance with South African procurement statutes (PPPFA & SCM regulations).",
         content: `1.1 Introduction
-${company.companyName} (Registration No: ${company.registrationNumber}) is honored to submit this formal proposal in response to tender ${tenderRef}: "${tenderTitle}" issued by ${dept}.
+${company.companyName}${company.registrationNumber ? ` (Registration No: ${company.registrationNumber})` : ""} is honored to submit this formal proposal in response to tender ${tenderRef}: "${tenderTitle}" issued by ${dept}.
 
 1.2 Legal Standing & Statutory Verification
-- Central Supplier Database (CSD): Registered under Master Supplier Number ${company.csdNumber}.
-- South African Revenue Service (SARS): Tax Compliance Status (TCS) PIN on file: ${company.taxComplianceStatusPin}.
-- Broad-Based Black Economic Empowerment (B-BBEE): Level ${company.bbbeeLevel} Contributor (${company.bbbeeType}) conferring 135% procurement recognition.
-- Compensation Fund (COIDA): Valid Letter of Good Standing active until ${company.coidaExpiryDate}.
-${tenderData.cidbGradingRequired ? `- CIDB Registration: Qualified contractor status holding ${company.cidbGrading || "applicable grading"}.` : ""}
+- Central Supplier Database (CSD): ${company.csdNumber ? `MAAA supplier number on file: ${company.csdNumber}` : "[MAAA supplier number]"}.
+- South African Revenue Service (SARS): Tax Compliance Status (TCS) PIN: ${company.taxComplianceStatusPin || "[TCS PIN]"}.
+${company.bbbeeLevel ? `- Broad-Based Black Economic Empowerment (B-BBEE): Level ${company.bbbeeLevel} Contributor (${company.bbbeeType}).` : "- B-BBEE: [level per your certificate or affidavit]"}
+${company.coidaGoodStandingValid && company.coidaExpiryDate ? `- Compensation Fund (COIDA): Letter of Good Standing held, expiry ${company.coidaExpiryDate}.` : ""}
+${tenderData.cidbGradingRequired ? company.cidbGrading ? `- CIDB Registration: grading ${company.cidbGrading} on file - verify it meets this tender's stated ${tenderData.cidbGradingRequired} requirement.` : `- CIDB Registration: [this tender states ${tenderData.cidbGradingRequired} - add your cidb registration and grading, or confirm it does not apply]` : ""}
 
 1.3 Protection of Personal Information Act (POPIA) Undertaking
 In accordance with Act 4 of 2013, all candidate personnel credentials, financial statements, and proprietary project methodologies contained herein are submitted under confidential procurement privilege.`
@@ -100,25 +85,25 @@ Phase 3: Quality Assurance, Handover & Warranties
 - Skills transfer and formal close-out certification.`
       },
       {
-        title: `Section 3: Commercial Proposal & ${points} Preference Points Matrix`,
-        description: `Pricing structure optimized for South African ${points} formula under Preferential Procurement Regulations 2022.`,
+        title: points ? `Section 3: Commercial Proposal & ${points} Preference Points Matrix` : "Section 3: Commercial Proposal & Preference Points",
+        description: points ? `Pricing structure under the ${points} formula stated in this tender (Preferential Procurement Regulations 2022).` : "Pricing structure - confirm the preference-point system (80/20 or 90/10) stated in the tender document.",
         content: `3.1 Price Responsiveness
-Our commercial model has been calculated strictly inclusive of 15% Value Added Tax (VAT) in South African Rand (ZAR).
+All pricing is stated in South African Rand (ZAR). State here whether your prices include or exclude VAT, as this tender's pricing schedule requires (the standard VAT rate is 15%).
 
 3.2 Preference Points Claim (PPPFA 2022)
-Under the ${points} evaluation framework:
-- Price Allocation: ${String(points).includes("90") ? "90 Points" : "80 Points"}
-- Specific Goals (B-BBEE Level ${company.bbbeeLevel}): ${String(points).includes("90") ? "10 Points (Maximum Allocation)" : "20 Points (Maximum Allocation)"}
-Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.`
+${points ? `Under the ${points} evaluation framework stated in this tender:
+- Price Allocation: ${points === "90/10" ? "90 Points" : "80 Points"}
+- Specific Goals: ${points === "90/10" ? "10 Points" : "20 Points"}
+Your final score is computed by the organ of state from all received bids under the ${points} formula; this template does not estimate it.` : "The tender text did not state the preference-point system. Confirm 80/20 or 90/10 in the tender document before completing this claim (80/20 applies up to R50 million and 90/10 above it under the Preferential Procurement Regulations 2022)."}`
       },
       {
-        title: "Section 4: Mandatory Returnable Schedules & Annexures",
-        description: "Index of all statutory schedules ready for submission binding.",
-        content: `The following bound annexures accompany this tender envelope:
+        title: "Section 4: Returnable Schedules & Annexures",
+        description: "Index of returnable schedules - include only those this tender lists.",
+        content: `The tender's own returnables list governs which annexures are required. The list below is a common starting set - include only what this tender calls for:
 - Annexure A: Completed & Signed SBD 1 (Invitation to Bid)
 - Annexure B: Completed & Commissioner-stamped SBD 4 (Declaration of Interest)
 - Annexure C: Completed SBD 6.1 (Preference Points Claim under PPR 2022)
-- Annexure D: Full CSD Master Registration Summary Report (Tax Status Verified)
+- Annexure D: Full CSD Master Registration Summary Report
 - Annexure E: SANAS-Accredited B-BBEE Certificate / Commissioner Sworn Affidavit
 - Annexure F: Valid COIDA Letter of Good Standing
 - Annexure G: Audited Financial Statements (Last 2 Fiscal Years)
@@ -143,7 +128,7 @@ Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.
       {
         item: "B-BBEE Status & Specific Goals",
         requirement: "SANAS Verification Certificate or EME Affidavit",
-        smeStatus: `Declared Level ${company.bbbeeLevel} (${company.bbbeeType}) - certificate/affidavit to attach`,
+        smeStatus: company.bbbeeLevel ? `Declared Level ${company.bbbeeLevel} (${company.bbbeeType}) - certificate/affidavit to attach` : "Level not set - add your certificate or affidavit level",
         compliant: Boolean(company.bbbeeLevel),
         referenceDocument: "Sworn Affidavit / SANAS Certificate"
       },
@@ -156,7 +141,7 @@ Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.
       },
       {
         item: "SBD 4 Declaration of Interest",
-        requirement: "Mandatory declaration of any state employment ties",
+        requirement: "Declaration of any state employment ties, where this tender calls for SBD 4",
         smeStatus: "To complete and sign",
         compliant: false,
         referenceDocument: "SBD 4 Original Signed"
@@ -170,10 +155,10 @@ Total Estimated Score: 96.8 / 100 Points based on competitive pricing threshold.
       }
     ],
     priceScheduleFramework: [
-      { item: "Phase 1: Project Mobilization, Site Risk & Statutory Setup", unit: "Sum", quantity: 1, estimatedRate: "R 285,000.00", notes: "Includes safety plan, SCM compliance, and initial site coordination." },
-      { item: "Phase 2: Core Engineering, Supply & Implementation Works", unit: "Monthly", quantity: 6, estimatedRate: "R 940,000.00", notes: "Direct deliverables, accredited specialist labor, and materials." },
-      { item: "Phase 3: System Testing, Verification & Client SLA Support", unit: "Quarterly", quantity: 4, estimatedRate: "R 125,000.00", notes: "Post-delivery technical support and preventative maintenance." },
-      { item: "Contingency Provision (Statutory Municipal Clause)", unit: "Sum", quantity: 1, estimatedRate: "R 150,000.00", notes: "Subject to prior written client sign-off." }
+      { item: "Phase 1: Project Mobilization, Site Risk & Statutory Setup", unit: "Sum", quantity: 1, estimatedRate: "To be costed", notes: "Includes safety plan, SCM compliance, and initial site coordination." },
+      { item: "Phase 2: Core Engineering, Supply & Implementation Works", unit: "Monthly", quantity: 6, estimatedRate: "To be costed", notes: "Direct deliverables, accredited specialist labor, and materials." },
+      { item: "Phase 3: System Testing, Verification & Client SLA Support", unit: "Quarterly", quantity: 4, estimatedRate: "To be costed", notes: "Post-delivery technical support and preventative maintenance." },
+      { item: "Contingency Provision (if the tender allows one)", unit: "Sum", quantity: 1, estimatedRate: "To be costed", notes: "Subject to prior written client sign-off." }
     ],
     recommendedSbdForms: [
       "SBD 1: Invitation to Bid",
@@ -300,7 +285,7 @@ Output strictly a valid JSON object with NO markdown code fences and NO explanat
   "title": "Concise clean tender title",
   "referenceNumber": "Unique tender reference ID or use '${referenceId}'",
   "issuingDepartment": "Name of organ of state or state-owned enterprise",
-  "closingDate": "YYYY-MM-DD",
+  "closingDate": "YYYY-MM-DD exactly as stated, or null if the text states no closing date",
   "cidbGrading": "Extracted CIDB grading such as 7CE, 3GB, or null",
   "estimatedBudget": "Estimated amount in ZAR or Not Specified",
   "category": "Services: General | Financial and insurance activities | Supplies: General | Civil engineering | Information and communication | ICT & Technology | Security & Facilities",
@@ -314,7 +299,8 @@ Output strictly a valid JSON object with NO markdown code fences and NO explanat
     "subcontracting30Percent": false,
     "additionalDocuments": ["SBD 4", "SBD 6.1", "COIDA Good Standing", "CIDB Certificate"]
   },
-  "points": "80/20" or "90/10",
+Set each checklist boolean true ONLY when the tender text itself lists that item as a requirement; otherwise false. Never infer a statutory obligation that the text does not state.
+  "points": "80/20" or "90/10" exactly as stated in the text, or null if the text does not state the preference-point system,
   "technicalThreshold": 75
 }
 
@@ -450,18 +436,25 @@ ${rawText.slice(0, 1e4)}`;
   const subcontractMatch = /30%|SUBCONTRACTING|DESIGNATED GROUP|TARGETED ENTERPRISES/i.test(rawText);
   const cidbMatch = rawText.match(/\b([1-9][A-Z]{2}(?:\s*PE)?)\b/i);
   const cidbGrading = cidbMatch ? cidbMatch[1].toUpperCase() : void 0;
-  let points = "80/20";
+  let points;
   if (/90\/10|90\s*\/\s*10|FIFTY MILLION|R50,?000,?000/i.test(rawText)) {
     points = "90/10";
+  } else if (/80\/20|80\s*\/\s*20/i.test(rawText)) {
+    points = "80/20";
   }
   let extractedRef = referenceId;
-  const refMatch = rawText.match(/(?:BID\s*(?:NO|NUMBER)|TENDER\s*(?:NO|NOTICE|NUMBER)|REF(?:\s*NO)?)\s*[:.-]?\s*([A-Z0-9\/\-_.]{4,35})/i);
-  if (refMatch && refMatch[1]) {
-    extractedRef = refMatch[1].trim();
+  const refHead = rawText.match(/(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-]\s*/i);
+  if (refHead) {
+    const rest = rawText.slice(refHead.index + refHead[0].length);
+    const cap = rest.match(/^(.{4,45}?)(?=\.\s+[A-Z]|\s+[a-z]|\s+[A-Z][a-zA-Z ]{0,25}:\s|\s{2,}|\n|$)/);
+    if (cap && cap[1]) {
+      const candidate = cap[1].trim().replace(/[.,;:]+$/, "");
+      if (/\d/.test(candidate) && candidate.length >= 4) extractedRef = candidate;
+    }
   }
   const lines = rawText.split("\n").map((l) => l.trim()).filter(Boolean);
   let title = lines.find((l) => /SUPPLY|PROVISION|MAINTENANCE|REHABILITATION|APPOINTMENT|SERVICES/i.test(l)) || lines[0] || "South African Public Sector RFP";
-  title = title.replace(/^(?:BID|TENDER|NOTICE|DESCRIPTION)\s*[:.-]?\s*/i, "").slice(0, 140);
+  title = title.replace(/^(?:BID|TENDER|NOTICE|DESCRIPTION)\s*[:.-]?\s*/i, "").replace(/\s*(?:BID|TENDER|REF(?:ERENCE)?)\s*(?:NUMBER|NOTICE|NO)?\s*[:#-].*$/i, "").trim().slice(0, 140);
   let department = "Organ of State / Public Entity (South Africa)";
   if (/NATIONAL TREASURY/i.test(rawText)) department = "National Treasury of South Africa";
   else if (/SANRAL/i.test(rawText)) department = "South African National Roads Agency SOC Ltd (SANRAL)";
@@ -476,8 +469,24 @@ ${rawText.slice(0, 1e4)}`;
   else if (/GAUTENG|JOHANNESBURG|PRETORIA/i.test(rawText)) province = "Gauteng";
   else if (/KWAZULU|DURBAN|ETHEKWINI/i.test(rawText)) province = "KwaZulu-Natal";
   else if (/EASTERN CAPE|GQEBERHA/i.test(rawText)) province = "Eastern Cape";
-  let category = "ICT & Technology";
+  let closingDate = null;
+  const MONTHS = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+  const closeCtx = rawText.match(/closing\s*(?:date)?\s*[:.-]?\s*(.{0,40})/i)?.[1] || "";
+  const iso = closeCtx.match(/(20\d{2})-(\d{2})-(\d{2})/);
+  const named = closeCtx.match(/(\d{1,2})\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s*(20\d{2})/i);
+  const numeric = closeCtx.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](20\d{2})/);
+  const mk = (y, m, d) => {
+    const dt = new Date(Date.UTC(y, m, d));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m && dt.getUTCDate() === d ? dt : null;
+  };
+  let parsed = null;
+  if (iso) parsed = mk(+iso[1], +iso[2] - 1, +iso[3]);
+  else if (named) parsed = mk(+named[3], MONTHS[named[2].toLowerCase()], +named[1]);
+  else if (numeric) parsed = mk(+numeric[3], +numeric[2] - 1, +numeric[1]);
+  if (parsed) closingDate = parsed.toISOString().split("T")[0];
+  let category = "General Services";
   if (cidbGrading || /CONSTRUCTION|ROAD|ASPHALT|CIVIL|BUILDING/i.test(rawText)) category = "Civil & Construction";
+  else if (/CLEANING|HYGIENE|PEST CONTROL|GARDENING|LANDSCAPING|FACILITIES MANAGEMENT|CATERING/i.test(rawText)) category = "Security & Facilities";
   else if (/SECURITY|GUARDING|ARMED|ACCESS CONTROL|PSIRA/i.test(rawText)) category = "Security & Facilities";
   else if (/FLEET|VEHICLE|TELEMATICS|LOGISTICS/i.test(rawText)) category = "Logistics & Fleet";
   else if (/HEALTHCARE|MEDICAL|CLINIC|HOSPITAL/i.test(rawText)) category = "Medical & Healthcare";
@@ -487,9 +496,9 @@ ${rawText.slice(0, 1e4)}`;
       title,
       referenceNumber: extractedRef,
       issuingDepartment: department,
-      closingDate: new Date(Date.now() + 21 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0],
+      closingDate,
       cidbGrading: cidbGrading || null,
-      estimatedBudget: points === "90/10" ? "R 55,000,000.00+ (ZAR)" : "R 18,500,000.00 (ZAR)",
+      estimatedBudget: "Not Specified",
       province,
       category,
       checklist: {
@@ -500,20 +509,22 @@ ${rawText.slice(0, 1e4)}`;
         compulsoryBriefing: briefingMatch,
         subcontracting30Percent: subcontractMatch,
         additionalDocuments: [
-          "SBD 1: Invitation to Bid Document",
-          "SBD 4: Standard Bidding Declaration of Interest",
-          "SBD 6.1: Preference Points Claim Form under Preferential Procurement Regs 2022",
+          // Only documents the tender text itself calls for - the tender's own
+          // returnables list governs; nothing is asserted from general rules.
+          .../\bSBD\s*1\b/i.test(rawText) ? ["SBD 1: Invitation to Bid Document"] : [],
+          .../\bSBD\s*4\b/i.test(rawText) ? ["SBD 4: Standard Bidding Declaration of Interest"] : [],
+          .../\bSBD\s*6\.1\b/i.test(rawText) ? ["SBD 6.1: Preference Points Claim Form under Preferential Procurement Regs 2022"] : [],
           ...cidbGrading ? [`CIDB Proof of Registration with Active Grading ${cidbGrading}`] : [],
           ...coidaMatch ? ["COIDA Valid Letter of Good Standing (Compensation Commissioner / FEM)"] : [],
-          "Certified Copy of CIPC Company Registration Documents",
-          "Certified Identity Documents of all active Directors/Members"
+          .../\bCIPC\b/i.test(rawText) ? ["Certified Copy of CIPC Company Registration Documents"] : [],
+          .../identity documents|certified id/i.test(rawText) ? ["Certified Identity Documents of Directors/Members as stated"] : []
         ]
       },
-      points,
+      points: points || null,
       technicalThreshold: 70
     },
-    modelUsed: "Statutory Procurement Heuristics Engine (Offline Safe)",
-    failoverOccurred: true,
+    modelUsed: "Rule-based procurement preview (no language model)",
+    failoverOccurred: config.provider !== "statutory",
     failoverLogs
   };
 }
@@ -571,12 +582,12 @@ async function executeRfpPipeline({
       finalizeSpan(pdfSpan, "failed", { error: e.message });
     }
   }
-  addTrace(`[Privacy] Applying PII redaction before AI processing (ID-number and card-like digit sequences; see docs/FOUNDATION.md for limits).`);
-  const popiaSpan = createSpan("POPIA Data Sanitization & Compliance Verification", "popia.sanitize", "Scrub sensitive SME data");
-  const sanitizedText = workingText.replace(/\b(?:\d[ -]*?){13,16}\b/g, "[CONFIDENTIAL_POPIA_REDACTED]");
+  addTrace(`[Privacy] ${DOCUMENT_REDACTION_NOTICE}`);
+  const popiaSpan = createSpan("Tender-text pattern redaction", "popia.sanitize", "Mask supported personal-data patterns in tender text");
+  const sanitizedText = redactPii(workingText);
   await new Promise((r) => setTimeout(r, 60));
-  finalizeSpan(popiaSpan, "success", { bytesSanitized: workingText.length, popiaStandard: "Act 4 of 2013" });
-  addTrace(`[Privacy] Ingestion pipeline processes this document for the current session only.`);
+  finalizeSpan(popiaSpan, "success", { bytesSanitized: workingText.length, scope: "supported tender-text patterns only" });
+  addTrace(`[Privacy] A short excerpt of this document is included in this response. Pattern matching is limited; unrecognized personal details can remain.`);
   addTrace(`[Mastra Engine] Booting localized agent context using active LLM (${activeLlmConfig.modelId})...`);
   addTrace(`[Sentry Trace] Triggering sub-span execution loop: "${activeLlmConfig.provider} Information Extraction Tactic" (op: agent.llm.call)`);
   const extractionSpan = createSpan(`${activeLlmConfig.provider} Information Extraction Tactic`, "agent.llm.call", "LLM structural inference for South African RFP criteria");
@@ -604,70 +615,48 @@ async function executeRfpPipeline({
     throw error;
   }
   const complianceSpan = createSpan("South African Regulatory Checklist Evaluation", "compliance.evaluate", "Validating CSD, SARS, B-BBEE, CIDB, COIDA");
-  addTrace(`[Compliance Engine] Verifying mandatory returnables: CSD (${extractedData.checklist?.csd ? "Mandatory" : "Optional"}), SARS PIN (${extractedData.checklist?.sars ? "Mandatory" : "Optional"}), B-BBEE (${extractedData.checklist?.bbbee ? "Mandatory" : "Optional"}), CIDB (${extractedData.cidbGrading || "N/A"}).`);
+  addTrace(`[Compliance Engine] Returnables found in the tender text: CSD (${extractedData.checklist?.csd ? "listed" : "not found in text"}), SARS PIN (${extractedData.checklist?.sars ? "listed" : "not found in text"}), B-BBEE (${extractedData.checklist?.bbbee ? "listed" : "not found in text"}), CIDB (${extractedData.cidbGrading || "not found in text"}). Confirm against the tender's own returnables list.`);
   await new Promise((r) => setTimeout(r, 40));
   finalizeSpan(complianceSpan, "success", {
-    csdRequired: extractedData.checklist?.csd ?? true,
-    sarsRequired: extractedData.checklist?.sars ?? true,
-    bbbeeRequired: extractedData.checklist?.bbbee ?? true,
+    csdRequired: extractedData.checklist?.csd ?? false,
+    sarsRequired: extractedData.checklist?.sars ?? false,
+    bbbeeRequired: extractedData.checklist?.bbbee ?? false,
     cidbGrading: extractedData.cidbGrading || null
   });
-  addTrace(`[Sentry Trace] Initiating database sub-span: "Persist Extracted Schema to Database" (op: db.mongo)`);
-  const dbSpan = createSpan("Persist Extracted Schema to Database", "db.mongo", "Store verified tender document record");
-  let savedRecord = null;
   const tenderDoc = {
     title: extractedData.title || "South African Public Sector RFP",
     referenceNumber: extractedData.referenceNumber || referenceId,
     issuingDepartment: extractedData.issuingDepartment || "Organ of State",
-    closingDate: new Date(extractedData.closingDate || Date.now() + 21 * 24 * 60 * 60 * 1e3),
+    ...extractedData.closingDate && !isNaN(Date.parse(extractedData.closingDate)) ? { closingDate: new Date(extractedData.closingDate) } : {},
     cidbGradingRequired: extractedData.cidbGrading,
-    estimatedBudget: extractedData.estimatedBudget || "R 15,000,000.00 (ZAR)",
+    estimatedBudget: extractedData.estimatedBudget || "Not Specified",
     province: extractedData.province || "National / South Africa",
     category: extractedData.category || "ICT & Technology",
     extractedComplianceChecklist: {
-      csdRequired: extractedData.checklist?.csd ?? true,
-      sarsPinRequired: extractedData.checklist?.sars ?? true,
-      bbbeeRequired: extractedData.checklist?.bbbee ?? true,
+      csdRequired: extractedData.checklist?.csd ?? false,
+      sarsPinRequired: extractedData.checklist?.sars ?? false,
+      bbbeeRequired: extractedData.checklist?.bbbee ?? false,
       coidaRequired: extractedData.checklist?.coida ?? false,
       compulsoryBriefing: extractedData.checklist?.compulsoryBriefing ?? false,
       subcontracting30Percent: extractedData.checklist?.subcontracting30Percent ?? false,
       additionalDocuments: extractedData.checklist?.additionalDocuments || []
     },
     evaluationCriteria: {
-      preferencePointsSystem: extractedData.points || "80/20",
+      preferencePointsSystem: extractedData.points === "80/20" || extractedData.points === "90/10" ? extractedData.points : "unknown",
       technicalThresholdPercentage: extractedData.technicalThreshold || 70,
-      priceWeight: extractedData.points === "90/10" ? 90 : 80,
-      specificGoalsWeight: extractedData.points === "90/10" ? 10 : 20
+      ...extractedData.points === "90/10" ? { priceWeight: 90, specificGoalsWeight: 10 } : extractedData.points === "80/20" ? { priceWeight: 80, specificGoalsWeight: 20 } : {}
     },
     rawTextExcerpt: sanitizedText.slice(0, 2e3),
     createdAt: /* @__PURE__ */ new Date()
   };
-  try {
-    if (Tender_default.db && Tender_default.db.readyState === 1) {
-      savedRecord = await Tender_default.create(tenderDoc);
-      addTrace(`[MongoDB Atlas] Persisted record ${savedRecord._id} to 'tenders' collection.`);
-    } else {
-      const mockId = "mongo-doc-" + Date.now();
-      savedRecord = { ...tenderDoc, _id: mockId, id: mockId };
-      inMemoryTenderStore.set(savedRecord.referenceNumber, savedRecord);
-      addTrace(`[MongoDB Engine] Document indexed in resilient session storage (ID: ${savedRecord._id}).`);
-    }
-    finalizeSpan(dbSpan, "success", { recordId: savedRecord._id, reference: savedRecord.referenceNumber });
-  } catch (dbErr) {
-    console.warn("[DB Trace] Mongo create fallback:", dbErr.message);
-    const mockId = "mongo-doc-" + Date.now();
-    savedRecord = { ...tenderDoc, _id: mockId, id: mockId };
-    inMemoryTenderStore.set(savedRecord.referenceNumber, savedRecord);
-    finalizeSpan(dbSpan, "success", { note: "Cached in memory repository" });
-    addTrace(`[MongoDB Engine] Document registered to local tender repository cache.`);
-  }
+  const savedRecord = { ...tenderDoc, _id: `analysis-${Date.now()}`, id: `analysis-${Date.now()}` };
   const skeleton = generateBidResponseSkeleton(savedRecord, companyProfile);
   finalizeSpan(rootSpan, "success", {
     totalDurationMs: Date.now() - startTime,
     referenceNumber: savedRecord.referenceNumber,
-    complianceScore: "100% Parsed"
+    complianceScore: "Extraction complete - confirm requirements against the tender\u2019s own returnables list"
   });
-  addTrace(`[Sentry Trace] Finalizing transaction loop. Generated structured bid skeleton (.docx ready). Total execution latency: ${Date.now() - startTime}ms.`);
+  addTrace(`[Sentry Trace] Finalizing transaction loop. Generated structured bid skeleton (Word-compatible .doc export). Total execution latency: ${Date.now() - startTime}ms.`);
   return {
     record: savedRecord,
     traceLogs,
@@ -675,6 +664,79 @@ async function executeRfpPipeline({
     skeleton,
     usedModel: modelUsedName
   };
+}
+
+// src/lib/server/fieldCrypto.ts
+import { createHash, randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
+var PREFIX = "enc:v1:";
+var SENSITIVE_FIELDS = ["taxComplianceStatusPin"];
+function deriveKey(raw2) {
+  return createHash("sha256").update(raw2, "utf8").digest();
+}
+function fieldEncryptionEnabled(key) {
+  return Boolean(key && key.trim().length > 0);
+}
+function encryptField(key, value) {
+  if (typeof value !== "string" || value === "" || value.startsWith(PREFIX) || !fieldEncryptionEnabled(key)) {
+    return value;
+  }
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", deriveKey(key), iv);
+  const ct = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return PREFIX + [iv.toString("base64"), tag.toString("base64"), ct.toString("base64")].join(":");
+}
+function isEncryptedValue(value) {
+  return typeof value === "string" && value.startsWith(PREFIX);
+}
+function decryptField(key, value) {
+  if (!isEncryptedValue(value)) {
+    return value;
+  }
+  if (!fieldEncryptionEnabled(key)) {
+    return "";
+  }
+  try {
+    const [ivB64, tagB64, ctB64] = value.slice(PREFIX.length).split(":");
+    const decipher = createDecipheriv("aes-256-gcm", deriveKey(key), Buffer.from(ivB64, "base64"));
+    decipher.setAuthTag(Buffer.from(tagB64, "base64"));
+    return Buffer.concat([decipher.update(Buffer.from(ctB64, "base64")), decipher.final()]).toString("utf8");
+  } catch {
+    return "";
+  }
+}
+function encryptProfileFields(key, profile) {
+  if (!fieldEncryptionEnabled(key) || !profile) return profile;
+  const out = { ...profile };
+  for (const f of SENSITIVE_FIELDS) out[f] = encryptField(key, out[f]);
+  return out;
+}
+function decryptProfileFields(key, profile) {
+  if (!profile) return profile;
+  const out = { ...profile };
+  for (const f of SENSITIVE_FIELDS) out[f] = decryptField(key, out[f]);
+  return out;
+}
+function profileForClient(key, stored) {
+  const view = decryptProfileFields(key, stored);
+  view.taxComplianceStatusPinUnavailable = isEncryptedValue(stored.taxComplianceStatusPin) && view.taxComplianceStatusPin === "";
+  return view;
+}
+function prepareProfileSave(key, stored, input) {
+  const decoded = decryptProfileFields(key, stored);
+  const unreadable = isEncryptedValue(stored.taxComplianceStatusPin) && decoded.taxComplianceStatusPin === "";
+  const merged = { ...decoded, ...input };
+  delete merged.taxComplianceStatusPinUnavailable;
+  const incoming = input.taxComplianceStatusPin;
+  if (isEncryptedValue(incoming)) throw new Error("Enter a new PIN, not an encrypted value.");
+  if (unreadable) {
+    if (typeof incoming !== "string" || incoming.trim() === "") {
+      merged.taxComplianceStatusPin = stored.taxComplianceStatusPin;
+    } else if (!fieldEncryptionEnabled(key)) {
+      throw new Error("PIN protection key is unavailable. Your saved PIN was not changed. Contact the operator before replacing it.");
+    }
+  }
+  return encryptProfileFields(key, merged);
 }
 
 // src/lib/services/serpDiscovery.ts
@@ -1555,6 +1617,216 @@ async function detectLocalModels(customEndpoint) {
   };
 }
 
+// src/lib/server/tenderFeed.ts
+function registerTenderFeedRoutes(app2, deps) {
+  const { foundation: foundation2, store } = deps;
+  app2.post("/api/etenders/sync", foundation2.requireAuth, async (req, res) => {
+    try {
+      const allowSerpApi = await foundation2.serpApiAccess(req);
+      const result = await fetchSouthAfricanTenders(void 0, "Western Cape", { allowSerpApi });
+      if (!result.serpApiConsumed) await foundation2.releaseConsumption(req, "serpapi");
+      if (res.destroyed || !await foundation2.repos.tenants.getById(req.auth.tenantId)) return;
+      result.leads.forEach((l) => {
+        const key = JSON.stringify([req.auth.tenantId, l.referenceNumber]);
+        if (!store.has(key)) {
+          store.set(key, {
+            tenantId: req.auth.tenantId,
+            title: l.title,
+            referenceNumber: l.referenceNumber,
+            issuingDepartment: l.department,
+            closingDate: l.closingDate,
+            province: l.province,
+            category: l.category,
+            cidbGradingRequired: l.cidbGrading,
+            estimatedBudget: l.budgetEst,
+            rawTextExcerpt: l.rawSampleText || l.snippet,
+            extractedComplianceChecklist: {
+              csdRequired: l.csdMandatory,
+              sarsPinRequired: true,
+              bbbeeRequired: true,
+              coidaRequired: Boolean(l.cidbGrading),
+              additionalDocuments: ["SBD 1", "SBD 4", "SBD 6.1"]
+            },
+            evaluationCriteria: {
+              preferencePointsSystem: "80/20",
+              technicalThresholdPercentage: 70
+            },
+            createdAt: /* @__PURE__ */ new Date()
+          });
+        }
+      });
+      res.json({
+        success: true,
+        syncedCount: result.syncedCount,
+        westernCapeCount: result.leads.filter((l) => l.province.includes("Western Cape")).length,
+        source: result.source,
+        isLiveEtendersPortal: result.isLiveEtendersPortal,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  app2.get("/api/tenders", (req, res) => {
+    let tenders = Array.from(store.values());
+    tenders = req.auth ? tenders.filter((t) => !t.tenantId || t.tenantId === req.auth.tenantId) : tenders.filter((t) => !t.tenantId);
+    res.json({ success: true, count: tenders.length, tenders });
+  });
+}
+
+// src/lib/server/generatedDatasets.ts
+function registerGeneratedDatasetRoute(app2, deps) {
+  const { foundation: foundation2, store, datasets } = deps;
+  app2.post("/api/finetune/datasets/generate-from-tenders", foundation2.requireAdmin, (req, res) => {
+    try {
+      const tenders = Array.from(store.values()).filter((t) => !t.tenantId || t.tenantId === req.auth.tenantId);
+      const generatedExamples = tenders.map((t, idx) => ({
+        id: `gen-ex-${idx + 1}-${Date.now().toString().slice(-4)}`,
+        domain: t.province?.includes("Western Cape") ? "Western Cape SCM" : t.cidbGradingRequired ? "CIDB Act" : "PPPFA 2022",
+        prompt: `Audit South African procurement document "${t.title}" (Ref: ${t.referenceNumber}) issued by ${t.issuingDepartment}. Extract mandatory statutory eligibility, CIDB grading, and preference points system.`,
+        completion: JSON.stringify({
+          title: t.title,
+          referenceNumber: t.referenceNumber,
+          issuingDepartment: t.issuingDepartment,
+          province: t.province,
+          closingDate: t.closingDate,
+          pointsSystem: t.evaluationCriteria?.preferencePointsSystem || "80/20",
+          cidbGrading: t.cidbGradingRequired || null,
+          mandatoryEligibility: {
+            csdMaAA: t.extractedComplianceChecklist?.csdRequired ?? true,
+            sarsTcsPin: t.extractedComplianceChecklist?.sarsPinRequired ?? true,
+            bbbeeStatus: t.extractedComplianceChecklist?.bbbeeRequired ?? true,
+            coidaGoodStanding: t.extractedComplianceChecklist?.coidaRequired ?? false,
+            compulsoryBriefing: t.extractedComplianceChecklist?.compulsoryBriefing ?? false,
+            designatedSubcontracting30Percent: t.extractedComplianceChecklist?.subcontracting30Percent ?? false
+          },
+          returnableSchedules: t.extractedComplianceChecklist?.additionalDocuments || ["SBD 1", "SBD 4", "SBD 6.1"]
+        }, null, 2),
+        referenceRfp: t.referenceNumber,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      }));
+      const tenantId = req.auth.tenantId;
+      let ds = datasets.find((d) => d.id === `dataset-generated-${tenantId}` && d.tenantId === tenantId);
+      if (!ds) {
+        ds = {
+          id: `dataset-generated-${tenantId}`,
+          tenantId,
+          name: "Generated tender examples",
+          description: "Examples from this workspace and public tenders.",
+          category: "Custom",
+          version: "1.0.0",
+          format: "alpaca",
+          examples: [],
+          exampleCount: 0,
+          tokenCountEst: 0,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        datasets.unshift(ds);
+      }
+      ds.examples = [...generatedExamples, ...ds.examples];
+      ds.exampleCount = ds.examples.length;
+      ds.tokenCountEst = ds.examples.length * 1400;
+      res.json({
+        success: true,
+        generatedCount: generatedExamples.length,
+        dataset: ds
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+}
+
+// src/lib/server/simulatedTraining.ts
+import { randomUUID } from "node:crypto";
+function registerSimulatedTrainingRoute(app2, deps) {
+  const { foundation: foundation2, datasets, jobs, schedule = setInterval } = deps;
+  app2.post("/api/finetune/start", foundation2.requireAdmin, (req, res) => {
+    try {
+      const { baseModel = "meta-llama/Meta-Llama-3.1-8B-Instruct", datasetId, loraRank, loraAlpha, epochs, learningRate } = req.body || {};
+      if (typeof datasetId !== "string" || !datasetId.trim() || typeof baseModel !== "string" || !["meta-llama/Meta-Llama-3.1-8B-Instruct", "google/gemma-2-9b-it", "google/gemma-2-27b-it"].includes(baseModel)) {
+        res.status(400).json({ success: false, error: "valid_dataset_and_model_required" });
+        return;
+      }
+      const dataset = datasets.find((d) => d.id === datasetId && (!d.tenantId || d.tenantId === req.auth.tenantId));
+      if (!dataset) {
+        res.status(404).json({ success: false, error: "dataset_not_found" });
+        return;
+      }
+      const jobId = `ft-job-${randomUUID()}`;
+      const outputName = `${baseModel.includes("llama") ? "Llama 3.1 8B" : "Gemma 2 9B"} - SA Procurement LoRA (Job ${jobId})`;
+      const newJob = {
+        tenantId: req.auth.tenantId,
+        simulated: true,
+        id: jobId,
+        jobName: `job-${jobId}`,
+        baseModel,
+        datasetId: dataset.id,
+        datasetName: dataset.name,
+        status: "training",
+        progress: 5,
+        currentEpoch: 1,
+        totalEpochs: Number(epochs) || 3,
+        currentStep: 2,
+        totalSteps: (Number(epochs) || 3) * 20,
+        currentLoss: 2.38,
+        learningRate: Number(learningRate) || 2e-4,
+        vramUsageGb: 7.6,
+        etaSeconds: 120,
+        lossHistory: [
+          { step: 1, loss: 2.62 },
+          { step: 2, loss: 2.38 }
+        ],
+        loraRank: Number(loraRank) || 16,
+        loraAlpha: Number(loraAlpha) || 32,
+        loraDropout: 0.05,
+        adapterArtifactName: "adapter_model.safetensors",
+        outputModelName: outputName,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      jobs.unshift(newJob);
+      let step = 2;
+      const interval = schedule(() => {
+        step += 3;
+        const totalSteps = newJob.totalSteps;
+        const progress = Math.min(100, Math.round(step / totalSteps * 100));
+        const epoch = Math.min(newJob.totalEpochs, Math.ceil(step / totalSteps * newJob.totalEpochs));
+        const decayLoss = Number((0.28 + 2.1 * Math.exp(-step / 14) + Math.random() * 0.04).toFixed(3));
+        newJob.progress = progress;
+        newJob.currentStep = Math.min(step, totalSteps);
+        newJob.currentEpoch = epoch;
+        newJob.currentLoss = decayLoss;
+        newJob.etaSeconds = Math.max(0, Math.round((totalSteps - step) * 2.2));
+        newJob.lossHistory.push({ step: newJob.currentStep, loss: decayLoss });
+        if (step >= totalSteps) {
+          clearInterval(interval);
+          deps.timers?.delete(jobId);
+          newJob.status = "completed";
+          newJob.progress = 100;
+          newJob.etaSeconds = 0;
+          newJob.completedAt = (/* @__PURE__ */ new Date()).toISOString();
+        }
+      }, 1800);
+      deps.timers?.set(jobId, interval);
+      res.json({ success: true, job: newJob, simulated: true, message: "Simulated training run for the studio preview - no GPU execution, no adapter artifact is produced. Use the exported Python script for real training." });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+}
+
+// src/lib/server/ephemeralErasure.ts
+function eraseTenantEphemeral(tenantId, state) {
+  for (const [key, row] of state.tenders) if (row.tenantId === tenantId) state.tenders.delete(key);
+  for (let i = state.datasets.length - 1; i >= 0; i--) if (state.datasets[i].tenantId === tenantId) state.datasets.splice(i, 1);
+  for (let i = state.jobs.length - 1; i >= 0; i--) if (state.jobs[i].tenantId === tenantId) {
+    const timer = state.timers.get(state.jobs[i].id);
+    if (timer) clearInterval(timer);
+    state.timers.delete(state.jobs[i].id);
+    state.jobs.splice(i, 1);
+  }
+}
+
 // src/lib/server/foundation.ts
 import { Router as Router3 } from "express";
 
@@ -1567,12 +1839,34 @@ var PLANS = [
     interval: "monthly",
     includedAnalyses: 60,
     includedSerpapiLookups: 30
+  },
+  {
+    // Complimentary tester cohort: granted only by an operator through
+    // account-bound code redemption, never by a billing webhook. Eric approved
+    // a shared seven-day beta with 20 pilot analyses and no paid searches.
+    // Campaign dates and recipients remain unset until separately approved.
+    id: "test_cohort",
+    name: "Beta access (free, 20 analyses per pilot)",
+    priceCentsZAR: 0,
+    interval: "monthly",
+    includedAnalyses: 20,
+    includedSerpapiLookups: 0
   }
 ];
 function getPlan(planId, plans = PLANS) {
   return plans.find((p) => p.id === planId);
 }
 function assertSafeConfig(config, env = process.env) {
+  if (config.betaCampaign) {
+    const c = config.betaCampaign;
+    const start = Date.parse(c.startsAt), end = Date.parse(c.endsAt);
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(c.id) || !/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(c.startsAt) || !/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(c.endsAt) || !Number.isFinite(start) || end - start !== 7 * 864e5 || !Array.isArray(c.invites) || c.invites.length > 100 || c.invites.some((i) => typeof i.userId !== "string" || !i.userId || !/^[a-f0-9]{64}$/.test(i.codeHash)) || new Set(c.invites.map((i) => i.userId)).size !== c.invites.length || new Set(c.invites.map((i) => i.codeHash)).size !== c.invites.length) {
+      throw new Error("Invalid beta campaign: require one fixed seven-day window and unique account-bound invite hashes.");
+    }
+  }
+  if (env.NODE_ENV === "production" && config.accountDeletionEnabled) {
+    throw new Error("Production account deletion is unavailable until durable restore reconciliation is implemented and reviewed.");
+  }
   if (env.NODE_ENV === "production" && config.store === "memory" && env.ALLOW_MEMORY_STORE_IN_PRODUCTION !== "true") {
     throw new Error(
       "Refusing to boot in production with the in-memory store: accounts, entitlements and usage would vanish on restart and tenants would share process state. Set STORE=postgres with DATABASE_URL or STORE=mongo with MONGODB_URI, or ALLOW_MEMORY_STORE_IN_PRODUCTION=true for a deliberate single-process demo."
@@ -1592,7 +1886,9 @@ function assertSafeConfig(config, env = process.env) {
 }
 function loadConfig(env = process.env) {
   return {
+    betaCampaign: env.BETA_CAMPAIGN_JSON ? JSON.parse(env.BETA_CAMPAIGN_JSON) : void 0,
     authRequired: env.AUTH_REQUIRED === "true",
+    accountDeletionEnabled: env.ACCOUNT_DELETION_ENABLED === "true",
     plans: PLANS,
     authRateLimit: { maxAttempts: Number(env.AUTH_RATE_LIMIT_MAX || 10), windowMs: Number(env.AUTH_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1e3) },
     sessionTtlHours: Number(env.SESSION_TTL_HOURS || 24 * 7),
@@ -1603,9 +1899,73 @@ function loadConfig(env = process.env) {
     mongoUri: env.MONGODB_URI || "",
     postgresUri: env.DATABASE_URL || "",
     cookieSecure: env.COOKIE_SECURE === "true",
-    trustProxy: env.TRUST_PROXY === void 0 ? false : env.TRUST_PROXY === "false" ? false : env.TRUST_PROXY || true
+    publicOrigin: env.PUBLIC_ORIGIN || "",
+    trustProxy: env.TRUST_PROXY === void 0 ? false : env.TRUST_PROXY === "false" ? false : env.TRUST_PROXY || true,
+    adminUserIds: (env.ADMIN_USER_IDS || "").split(",").map((s) => s.trim()).filter(Boolean),
+    profileFieldKey: env.PROFILE_FIELD_KEY || ""
   };
 }
+
+// src/lib/server/accountLifecycle.ts
+var AccountDeletionError = class extends Error {
+  constructor(code, status = 409) {
+    super(code);
+    this.code = code;
+    this.status = status;
+  }
+};
+function hasExternalBilling(provider, subscriptionRef) {
+  return Boolean(provider && !["mock", "operator_comp"].includes(provider) || !provider && subscriptionRef);
+}
+var TenantWorkCoordinator = class {
+  constructor(drainWaitMs = 3e4, maxReaders = 64, requestLeaseMs = 12e4) {
+    this.drainWaitMs = drainWaitMs;
+    this.maxReaders = maxReaders;
+    this.requestLeaseMs = requestLeaseMs;
+    this.states = /* @__PURE__ */ new Map();
+  }
+  async run(tenantId, exclusive, work) {
+    const state = this.states.get(tenantId) || { readers: 0, deleting: false };
+    if (exclusive && state.unsafe) throw new AccountDeletionError("account_work_outcome_unconfirmed", 503);
+    if (state.deleting) throw new AccountDeletionError("account_deletion_in_progress", 409);
+    if (!exclusive && state.readers >= this.maxReaders) throw new AccountDeletionError("account_busy", 429);
+    this.states.set(tenantId, state);
+    if (!exclusive) {
+      state.readers++;
+      let deadline;
+      try {
+        return await Promise.race([work(), new Promise((_resolve, reject) => {
+          deadline = setTimeout(() => {
+            state.unsafe = true;
+            reject(new AccountDeletionError("request_outcome_unconfirmed", 503));
+          }, this.requestLeaseMs);
+        })]);
+      } finally {
+        if (deadline) clearTimeout(deadline);
+        state.readers--;
+        if (!state.readers) {
+          state.drained?.();
+          if (!state.deleting && !state.unsafe) this.states.delete(tenantId);
+        }
+      }
+    }
+    state.deleting = true;
+    let timer;
+    try {
+      if (state.readers) await new Promise((resolve, reject) => {
+        state.drained = resolve;
+        timer = setTimeout(() => reject(new AccountDeletionError("account_busy_retry_later", 503)), this.drainWaitMs);
+      });
+      if (state.unsafe) throw new AccountDeletionError("account_work_outcome_unconfirmed", 503);
+      return await work();
+    } finally {
+      if (timer) clearTimeout(timer);
+      state.drained = void 0;
+      state.deleting = false;
+      if (!state.readers && !state.unsafe) this.states.delete(tenantId);
+    }
+  }
+};
 
 // src/lib/server/repos/memory.ts
 function createMemoryRepos() {
@@ -1615,12 +1975,40 @@ function createMemoryRepos() {
   const sessionsById = /* @__PURE__ */ new Map();
   const sessionsByToken = /* @__PURE__ */ new Map();
   const entitlements = /* @__PURE__ */ new Map();
-  const billingEventIds = /* @__PURE__ */ new Set();
+  const billingEventIds = /* @__PURE__ */ new Map();
   const usage = /* @__PURE__ */ new Map();
   const profiles = /* @__PURE__ */ new Map();
   const applications = /* @__PURE__ */ new Map();
   const clone = (v) => structuredClone(v);
-  return {
+  const repos = {
+    accountDeletion: {
+      async erase(tenantId) {
+        if (!tenants.has(tenantId)) return;
+        if (hasExternalBilling(entitlements.get(tenantId)?.providerName, entitlements.get(tenantId)?.providerSubscriptionRef) || [...billingEventIds.values()].some((e) => e.tenantId === tenantId && hasExternalBilling(e.provider))) {
+          throw new AccountDeletionError("billing_resolution_required");
+        }
+        for (const [id, u] of usersById) if (u.tenantId === tenantId) {
+          usersById.delete(id);
+          usersByEmail.delete(u.email.toLowerCase());
+        }
+        for (const [id, v] of sessionsById) if (v.tenantId === tenantId) {
+          sessionsById.delete(id);
+          sessionsByToken.delete(v.tokenHash);
+        }
+        for (const [id, v] of applications) if (v.tenantId === tenantId) applications.delete(id);
+        for (const [id, v] of usage) if (v.tenantId === tenantId) usage.delete(id);
+        for (const [id, v] of billingEventIds) if (v.tenantId === tenantId) billingEventIds.delete(id);
+        profiles.delete(tenantId);
+        entitlements.delete(tenantId);
+        tenants.delete(tenantId);
+      }
+    },
+    beta: {
+      async redeem(e) {
+        if (!tenants.has(e.tenantId)) throw new Error("tenant_missing");
+        if (!entitlements.has(e.tenantId)) entitlements.set(e.tenantId, clone(e));
+      }
+    },
     tenants: {
       async create(t) {
         tenants.set(t.id, clone(t));
@@ -1677,7 +2065,7 @@ function createMemoryRepos() {
         return billingEventIds.has(eventId);
       },
       async record(e) {
-        billingEventIds.add(e.eventId);
+        billingEventIds.set(e.eventId, clone(e));
       }
     },
     usage: {
@@ -1717,6 +2105,9 @@ function createMemoryRepos() {
       },
       async put(p) {
         profiles.set(p.tenantId, clone(p));
+      },
+      async delete(tenantId) {
+        profiles.delete(tenantId);
       }
     },
     applications: {
@@ -1732,17 +2123,49 @@ function createMemoryRepos() {
       },
       async put(a) {
         applications.set(`${a.tenantId}:${a.id}`, clone(a));
+      },
+      async delete(tenantId, id) {
+        applications.delete(`${tenantId}:${id}`);
+      }
+    },
+    stats: {
+      async overview(periodKey) {
+        const entitlementsByStatus = {};
+        for (const e of entitlements.values()) {
+          const key = e.status || "none";
+          entitlementsByStatus[key] = (entitlementsByStatus[key] || 0) + 1;
+        }
+        let analyses = 0;
+        let serpapiLookups = 0;
+        for (const c of usage.values()) {
+          if (c.periodKey !== periodKey) continue;
+          analyses += c.analyses;
+          serpapiLookups += c.serpapiLookups;
+        }
+        return { tenants: tenants.size, users: usersById.size, entitlementsByStatus, usage: { analyses, serpapiLookups } };
       }
     }
   };
+  const guard = (group, name, tenant) => {
+    const original = group[name];
+    group[name] = async (...args) => {
+      if (!tenants.has(tenant(...args))) throw new AccountDeletionError("tenant_not_found", 404);
+      return original.apply(group, args);
+    };
+  };
+  for (const [group, name] of [["users", "create"], ["sessions", "create"], ["entitlements", "put"], ["billingEvents", "record"], ["profiles", "put"], ["applications", "create"], ["applications", "put"]]) {
+    guard(repos[group], name, (a) => a.tenantId);
+  }
+  for (const name of ["increment", "tryConsume", "release"]) guard(repos.usage, name, (a) => a);
+  return repos;
 }
 
 // src/lib/server/auth.ts
-import { randomBytes as randomBytes2, createHash } from "node:crypto";
+import { randomBytes as randomBytes3, createHash as createHash2 } from "node:crypto";
 import { Router } from "express";
 
 // src/lib/server/passwords.ts
-import { scrypt, randomBytes, timingSafeEqual } from "node:crypto";
+import { scrypt, randomBytes as randomBytes2, timingSafeEqual } from "node:crypto";
 function scryptAsync(password, salt, keylen, options) {
   return new Promise((resolve, reject) => {
     scrypt(password, salt, keylen, options, (err, derivedKey) => err ? reject(err) : resolve(derivedKey));
@@ -1754,7 +2177,7 @@ var SCRYPT_P = 1;
 var KEY_LENGTH = 32;
 var SALT_LENGTH = 16;
 async function hashPassword(password) {
-  const salt = randomBytes(SALT_LENGTH);
+  const salt = randomBytes2(SALT_LENGTH);
   const derived = await scryptAsync(password, salt, KEY_LENGTH, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P });
   return ["scrypt", SCRYPT_N, SCRYPT_R, SCRYPT_P, salt.toString("base64"), derived.toString("base64")].join("$");
 }
@@ -1780,7 +2203,7 @@ async function verifyPassword(password, stored) {
 var SESSION_COOKIE = "ta_session";
 var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function hashToken(token) {
-  return createHash("sha256").update(token).digest("hex");
+  return createHash2("sha256").update(token).digest("hex");
 }
 function parseCookies(header) {
   const out = {};
@@ -1807,10 +2230,10 @@ function clearSessionCookie(res) {
   res.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 async function createSession(repos, config, user) {
-  const token = randomBytes2(32).toString("base64url");
+  const token = randomBytes3(32).toString("base64url");
   const now = /* @__PURE__ */ new Date();
   const session = {
-    id: randomBytes2(16).toString("hex"),
+    id: randomBytes3(16).toString("hex"),
     userId: user.id,
     tenantId: user.tenantId,
     tokenHash: hashToken(token),
@@ -1883,6 +2306,10 @@ function createAuthRouter(repos, config) {
   const ipLimiter = createRateLimiter(config.authRateLimit.maxAttempts, config.authRateLimit.windowMs);
   const accountLimiter = createRateLimiter(config.authRateLimit.maxAttempts, config.authRateLimit.windowMs);
   router.use((req, res, next) => {
+    if (!req.path.startsWith("/auth/")) {
+      next();
+      return;
+    }
     if (!ipLimiter.allow(`${req.ip}:${req.path}`)) {
       res.status(429).json({ success: false, error: "too_many_attempts" });
       return;
@@ -1906,12 +2333,12 @@ function createAuthRouter(repos, config) {
       }
       const now = /* @__PURE__ */ new Date();
       const tenant = {
-        id: randomBytes2(16).toString("hex"),
+        id: randomBytes3(16).toString("hex"),
         companyName: typeof companyName === "string" && companyName.trim() ? companyName.trim() : email,
         createdAt: now
       };
       const user = {
-        id: randomBytes2(16).toString("hex"),
+        id: randomBytes3(16).toString("hex"),
         tenantId: tenant.id,
         email: email.toLowerCase(),
         passwordHash: await hashPassword(password),
@@ -1921,7 +2348,7 @@ function createAuthRouter(repos, config) {
       await repos.users.create(user);
       const { token } = await createSession(repos, config, user);
       setSessionCookie(res, token, config.sessionTtlHours * 60 * 60 * 1e3, isSecureRequest(req, config));
-      res.json({ success: true, tenantId: tenant.id, email: user.email });
+      res.json({ success: true, tenantId: tenant.id, email: user.email, userId: user.id, isAdmin: config.adminUserIds.includes(user.id) });
     } catch (err) {
       res.status(err.message === "email_already_registered" ? 409 : 500).json({ success: false, error: err.message });
     }
@@ -1946,7 +2373,7 @@ function createAuthRouter(repos, config) {
       }
       const { token } = await createSession(repos, config, user);
       setSessionCookie(res, token, config.sessionTtlHours * 60 * 60 * 1e3, isSecureRequest(req, config));
-      res.json({ success: true, tenantId: user.tenantId, email: user.email });
+      res.json({ success: true, tenantId: user.tenantId, email: user.email, userId: user.id, isAdmin: config.adminUserIds.includes(user.id) });
     } catch (err) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -1969,7 +2396,7 @@ function createAuthRouter(repos, config) {
       res.status(401).json({ success: false, error: "not_authenticated" });
       return;
     }
-    res.json({ success: true, ...req.auth });
+    res.json({ success: true, ...req.auth, isAdmin: config.adminUserIds.includes(req.auth.userId) });
   });
   return router;
 }
@@ -1993,6 +2420,7 @@ function emptyEntitlement(tenantId) {
 }
 function effectiveStatus(ent, now, graceDays) {
   if (!ent || !ent.status) return "none";
+  if (ent.planId === "test_cohort" && (!ent.currentPeriodEnd || now.getTime() >= ent.currentPeriodEnd.getTime())) return "cancelled";
   if (ent.status === "cancelled") return "cancelled";
   if (ent.currentPeriodEnd && now.getTime() > ent.currentPeriodEnd.getTime()) {
     if (ent.cancelAtPeriodEnd) return "cancelled";
@@ -2001,7 +2429,12 @@ function effectiveStatus(ent, now, graceDays) {
   }
   return ent.status;
 }
+function entitlementStatus(ent, config, now = /* @__PURE__ */ new Date()) {
+  if (ent?.planId === "test_cohort" && (!config.betaCampaign || ent.providerSubscriptionRef !== `beta:${config.betaCampaign.id}` || now < new Date(config.betaCampaign.startsAt) || now >= new Date(config.betaCampaign.endsAt))) return "cancelled";
+  return effectiveStatus(ent, now, config.pastDueGraceDays);
+}
 async function applyBillingEvent(repos, evt, now = /* @__PURE__ */ new Date()) {
+  if (!await repos.tenants.getById(evt.tenantId)) return { applied: false, reason: "tenant_missing", entitlement: emptyEntitlement(evt.tenantId) };
   if (await repos.billingEvents.has(evt.eventId)) {
     const current2 = await repos.entitlements.get(evt.tenantId) || emptyEntitlement(evt.tenantId);
     return { applied: false, reason: "duplicate", entitlement: current2 };
@@ -2065,18 +2498,21 @@ async function applyBillingEvent(repos, evt, now = /* @__PURE__ */ new Date()) {
 }
 async function authorizeAndConsume(repos, config, tenantId, action, now = /* @__PURE__ */ new Date()) {
   const ent = await repos.entitlements.get(tenantId);
-  const status = effectiveStatus(ent, now, config.pastDueGraceDays);
+  const status = entitlementStatus(ent, config, now);
   if (status === "none") return { allowed: false, reason: "no_subscription", status };
   if (status === "cancelled" || status === "past_due") {
     return { allowed: false, reason: "subscription_inactive", status };
   }
   const plan = getPlan(ent?.planId, config.plans);
   if (!plan) return { allowed: false, reason: "unknown_plan", status };
-  const limit = action === "analysis" ? plan.includedAnalyses : plan.includedSerpapiLookups;
+  const limit = ent?.planId === "test_cohort" ? action === "analysis" ? 20 : 0 : action === "analysis" ? plan.includedAnalyses : plan.includedSerpapiLookups;
   const field = action === "analysis" ? "analyses" : "serpapiLookups";
-  const claim = await repos.usage.tryConsume(tenantId, currentPeriodKey(now), field, limit);
+  const claim = await repos.usage.tryConsume(tenantId, usagePeriodKey(ent, now), field, limit);
   if (!claim.allowed) return { allowed: false, reason: "plan_limit_reached", status };
-  return { allowed: true, status };
+  return { allowed: true, status, periodKey: usagePeriodKey(ent, now) };
+}
+function usagePeriodKey(ent, now = /* @__PURE__ */ new Date()) {
+  return ent?.planId === "test_cohort" ? "beta_pilot_v1" : currentPeriodKey(now);
 }
 function currentPeriodKey(now = /* @__PURE__ */ new Date()) {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -2145,7 +2581,17 @@ function createWebhookRouter(providers, repos) {
         res.status(401).json({ success: false, error: "invalid_signature_or_payload" });
         return;
       }
-      const result = await applyBillingEvent(repos, evt);
+      let result;
+      try {
+        result = await applyBillingEvent(repos, evt);
+      } catch {
+        if (!await repos.tenants.getById(evt.tenantId)) {
+          res.json({ success: true, applied: false, reason: "tenant_missing" });
+          return;
+        }
+        res.status(503).json({ success: false, error: "billing_event_failed" });
+        return;
+      }
       res.json({ success: true, applied: result.applied, reason: result.reason });
     }
   );
@@ -2214,10 +2660,10 @@ function seedRequirementsForTender(input) {
 }
 
 // src/lib/server/foundation.ts
-import { randomBytes as randomBytes3 } from "node:crypto";
+import { randomBytes as randomBytes4, createHash as createHash3 } from "node:crypto";
 var CONSUMED = /* @__PURE__ */ Symbol.for("tenderagent.consumed");
-function markConsumed(req, action) {
-  req[CONSUMED] = { ...req[CONSUMED], [action]: true };
+function markConsumed(req, action, periodKey) {
+  req[CONSUMED] = { ...req[CONSUMED], [action]: periodKey };
 }
 var GUARDED_ROUTES = [
   { method: "POST", path: "/api/analyze", action: "analysis" },
@@ -2232,7 +2678,7 @@ function defaultBillingProviders(config) {
     console.warn("[foundation] No billing webhook secret configured - mock billing provider DISABLED in production.");
     return [];
   }
-  const bootSecret = randomBytes3(24).toString("base64url");
+  const bootSecret = randomBytes4(24).toString("base64url");
   console.warn("[foundation] MOCK_BILLING_SECRET not set - generated a random per-boot secret for local testing (see server log, not committed).");
   return [new MockBillingProvider(bootSecret)];
 }
@@ -2245,6 +2691,39 @@ function createFoundation(options = {}) {
   const repos = options.repos || createMemoryRepos();
   const providers = options.providers || defaultBillingProviders(config);
   const sessionMiddleware = createSessionMiddleware(repos);
+  const coordinator = new TenantWorkCoordinator(3e4, 64, options.requestLeaseMs);
+  const tenantWorkMiddleware = (req, res, next) => {
+    if (!req.auth || !config.accountDeletionEnabled) {
+      next();
+      return;
+    }
+    const tenantId = req.auth.tenantId;
+    void coordinator.run(tenantId, req.method === "DELETE" && req.path === "/api/account", async () => {
+      if (!await repos.tenants.getById(tenantId)) {
+        res.status(401).json({ success: false, error: "authentication_required" });
+        return;
+      }
+      await new Promise((resolve) => {
+        if (res.destroyed) {
+          resolve();
+          return;
+        }
+        const originalEnd = res.end;
+        res.end = function(...args) {
+          try {
+            return originalEnd.apply(this, args);
+          } finally {
+            resolve();
+          }
+        };
+        res.once("finish", resolve);
+        next();
+      });
+    }).catch((e) => {
+      const err = e instanceof AccountDeletionError ? e : new AccountDeletionError("account_unavailable", 503);
+      if (!res.headersSent && !res.destroyed) res.status(err.status).json({ success: false, error: err.code });
+    });
+  };
   const authRouter = createAuthRouter(repos, config);
   const webhookRouter = createWebhookRouter(providers, repos);
   const originCheckMiddleware = (req, res, next) => {
@@ -2253,7 +2732,7 @@ function createFoundation(options = {}) {
     const origin = req.headers.origin;
     if (origin) {
       try {
-        if (new URL(origin).host !== req.headers.host) {
+        if (new URL(origin).host !== req.headers.host && origin !== config.publicOrigin) {
           res.status(403).json({ success: false, error: "origin_forbidden" });
           return;
         }
@@ -2267,9 +2746,10 @@ function createFoundation(options = {}) {
   const serpApiAccess = async (req) => {
     if (!req.auth) return false;
     try {
+      if ((await repos.entitlements.get(req.auth.tenantId))?.planId === "test_cohort") return false;
       if (req[CONSUMED]?.serpapi) return true;
       const decision = await authorizeAndConsume(repos, config, req.auth.tenantId, "serpapi");
-      if (decision.allowed) markConsumed(req, "serpapi");
+      if (decision.allowed) markConsumed(req, "serpapi", decision.periodKey);
       return decision.allowed;
     } catch (err) {
       console.error("[foundation] SerpApi metering failed - paid lookup denied:", err);
@@ -2279,9 +2759,10 @@ function createFoundation(options = {}) {
   const cloudLlmAccess = async (req) => {
     if (!req.auth) return false;
     try {
+      if ((await repos.entitlements.get(req.auth.tenantId))?.planId === "test_cohort") return false;
       if (req[CONSUMED]?.analysis) return true;
       const decision = await authorizeAndConsume(repos, config, req.auth.tenantId, "analysis");
-      if (decision.allowed) markConsumed(req, "analysis");
+      if (decision.allowed) markConsumed(req, "analysis", decision.periodKey);
       return decision.allowed;
     } catch (err) {
       console.error("[foundation] cloud LLM metering failed - paid call denied:", err);
@@ -2291,8 +2772,9 @@ function createFoundation(options = {}) {
   const releaseConsumption = async (req, action) => {
     const consumed = req[CONSUMED];
     if (!req.auth || !consumed?.[action]) return;
+    const periodKey = consumed[action];
     consumed[action] = false;
-    await repos.usage.release(req.auth.tenantId, currentPeriodKey(/* @__PURE__ */ new Date()), action === "analysis" ? "analyses" : "serpapiLookups");
+    await repos.usage.release(req.auth.tenantId, periodKey, action === "analysis" ? "analyses" : "serpapiLookups");
   };
   const requireAuth = (req, res, next) => {
     if (!req.auth) {
@@ -2301,7 +2783,121 @@ function createFoundation(options = {}) {
     }
     next();
   };
+  const requireAdmin = (req, res, next) => {
+    if (!req.auth) {
+      res.status(401).json({ success: false, error: "authentication_required" });
+      return;
+    }
+    if (!config.adminUserIds.includes(req.auth.userId)) {
+      res.status(403).json({ success: false, error: "admin_required" });
+      return;
+    }
+    next();
+  };
+  const isAdmin = (req) => Boolean(req.auth) && config.adminUserIds.includes(req.auth.userId);
+  const adminRouter = Router3();
+  adminRouter.get("/overview", requireAdmin, async (req, res) => {
+    try {
+      const overview = await repos.stats.overview(currentPeriodKey(/* @__PURE__ */ new Date()));
+      res.json({ success: true, overview });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  adminRouter.post("/test-access/grant", requireAdmin, async (req, res) => {
+    res.status(409).json({ success: false, error: "beta_code_redemption_required" });
+  });
+  adminRouter.post("/test-access/revoke", requireAdmin, async (req, res) => {
+    try {
+      const { email } = req.body || {};
+      if (typeof email !== "string" || !email.includes("@")) {
+        res.status(400).json({ success: false, error: "valid email required" });
+        return;
+      }
+      const user = await repos.users.getByEmail(email.toLowerCase());
+      if (!user) {
+        res.status(404).json({ success: false, error: "no account with that email" });
+        return;
+      }
+      const ent = await repos.entitlements.get(user.tenantId);
+      if (!ent || ent.planId !== "test_cohort" || ent.status !== "active") {
+        res.status(404).json({ success: false, error: "no active tester grant for that account" });
+        return;
+      }
+      const now = /* @__PURE__ */ new Date();
+      await repos.entitlements.put({ ...ent, status: "cancelled", updatedAt: now });
+      console.log(`[admin] test-access REVOKE tenant=${user.tenantId} email=${email.toLowerCase()} by=${req.auth.userId} at=${now.toISOString()}`);
+      res.json({ success: true, tenantId: user.tenantId, status: "cancelled" });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+  adminRouter.get("/test-access/status", requireAdmin, async (req, res) => {
+    try {
+      const email = typeof req.query.email === "string" ? req.query.email : "";
+      if (!email.includes("@")) {
+        res.status(400).json({ success: false, error: "valid email query required" });
+        return;
+      }
+      const user = await repos.users.getByEmail(email.toLowerCase());
+      if (!user) {
+        res.status(404).json({ success: false, error: "no account with that email" });
+        return;
+      }
+      const ent = await repos.entitlements.get(user.tenantId);
+      res.json({
+        success: true,
+        tenantId: user.tenantId,
+        entitlement: ent ? { planId: ent.planId, status: ent.status, currentPeriodEnd: ent.currentPeriodEnd, effectiveStatus: entitlementStatus(ent, config, /* @__PURE__ */ new Date()) } : { effectiveStatus: "none" }
+      });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
   const accountRouter = Router3();
+  const deletionAttempts = /* @__PURE__ */ new Map();
+  accountRouter.delete("/account", async (req, res) => {
+    if (!req.auth) {
+      res.status(401).json({ success: false, error: "authentication_required" });
+      return;
+    }
+    if (!config.accountDeletionEnabled) {
+      res.status(409).json({ success: false, error: "account_deletion_not_enabled" });
+      return;
+    }
+    if (!repos.accountDeletion) {
+      res.status(409).json({ success: false, error: "account_deletion_unavailable_for_store" });
+      return;
+    }
+    const now = Date.now();
+    for (const [key, value] of deletionAttempts) if (value.until <= now) deletionAttempts.delete(key);
+    const attempt = deletionAttempts.get(req.auth.userId) || { count: 0, until: now + 10 * 6e4 };
+    if (attempt.count >= 5) {
+      res.status(429).json({ success: false, error: "too_many_attempts" });
+      return;
+    }
+    attempt.count++;
+    deletionAttempts.set(req.auth.userId, attempt);
+    const { password, confirmation } = req.body || {};
+    if (confirmation !== "DELETE MY ACCOUNT" || typeof password !== "string") {
+      res.status(400).json({ success: false, error: "explicit_confirmation_and_password_required" });
+      return;
+    }
+    try {
+      const user = await repos.users.getById(req.auth.userId);
+      if (!user || !await verifyPassword(password, user.passwordHash)) {
+        res.status(403).json({ success: false, error: "reauthentication_failed" });
+        return;
+      }
+      await repos.accountDeletion.erase(req.auth.tenantId);
+      options.eraseEphemeral?.(req.auth.tenantId);
+      res.setHeader("Set-Cookie", "ta_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+      res.json({ success: true, message: "Account and active workspace data deleted. Provider recovery copies follow their separate retention rules." });
+    } catch (e) {
+      const err = e instanceof AccountDeletionError ? e : new AccountDeletionError("account_deletion_failed", 503);
+      res.status(err.status).json({ success: false, error: err.code });
+    }
+  });
   accountRouter.get("/account", async (req, res) => {
     if (!req.auth) {
       res.status(401).json({ success: false, error: "not_authenticated" });
@@ -2309,20 +2905,66 @@ function createFoundation(options = {}) {
     }
     const now = /* @__PURE__ */ new Date();
     const ent = await repos.entitlements.get(req.auth.tenantId);
-    const usage = await repos.usage.get(req.auth.tenantId, currentPeriodKey(now));
+    const usage = await repos.usage.get(req.auth.tenantId, usagePeriodKey(ent, now));
     const plan = getPlan(ent?.planId, config.plans);
     res.json({
       success: true,
       account: {
+        beta: {
+          redeemAvailable: Boolean(repos.beta && config.betaCampaign && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
+          endsAt: config.betaCampaign?.endsAt || null
+        },
+        accountDeletionAvailable: config.accountDeletionEnabled && Boolean(repos.accountDeletion),
         tenantId: req.auth.tenantId,
         email: req.auth.email,
-        entitlement: ent ? { ...ent, effectiveStatus: effectiveStatus(ent, now, config.pastDueGraceDays) } : { effectiveStatus: "none" },
+        entitlement: ent ? { ...ent, effectiveStatus: entitlementStatus(ent, config, now) } : { effectiveStatus: "none" },
         usage,
         // Own plan's usage allowances only. No plan catalog or pricing here:
         // the R250/60/30 figures are provisional config, not a public offer.
-        allowances: plan ? { includedAnalyses: plan.includedAnalyses, includedSerpapiLookups: plan.includedSerpapiLookups } : null
+        allowances: plan ? { includedAnalyses: ent?.planId === "test_cohort" ? 20 : plan.includedAnalyses, includedSerpapiLookups: ent?.planId === "test_cohort" ? 0 : plan.includedSerpapiLookups } : null
       }
     });
+  });
+  const betaAttempts = /* @__PURE__ */ new Map();
+  accountRouter.post("/beta/redeem", requireAuth, async (req, res) => {
+    const now = /* @__PURE__ */ new Date(), c = config.betaCampaign;
+    const key = req.auth.userId;
+    for (const [id, a] of betaAttempts) if (a.until <= now.getTime()) betaAttempts.delete(id);
+    const attempts = betaAttempts.get(key) || { count: 0, until: now.getTime() + 6e5 };
+    if (attempts.count >= 5 || !betaAttempts.has(key) && betaAttempts.size >= 1e4) {
+      res.status(429).json({ success: false, error: "too_many_attempts" });
+      return;
+    }
+    attempts.count++;
+    betaAttempts.set(key, attempts);
+    const code = req.body?.code;
+    if (!c || !repos.beta || now < new Date(c.startsAt) || now >= new Date(c.endsAt) || typeof code !== "string" || code.length < 24 || code.length > 256 || !c.invites.some((i) => i.userId === key && i.codeHash === createHash3("sha256").update(code).digest("hex"))) {
+      res.status(400).json({ success: false, error: "invalid_or_expired_beta_code" });
+      return;
+    }
+    try {
+      await repos.beta.redeem({
+        tenantId: req.auth.tenantId,
+        planId: "test_cohort",
+        status: "active",
+        currentPeriodEnd: new Date(c.endsAt),
+        cancelAtPeriodEnd: true,
+        providerName: "operator_comp",
+        providerSubscriptionRef: `beta:${c.id}`,
+        refundedAt: null,
+        lastEventAt: now,
+        lastEventId: `beta:${c.id}`,
+        updatedAt: now
+      });
+      const ent = await repos.entitlements.get(req.auth.tenantId);
+      if (ent?.providerSubscriptionRef !== `beta:${c.id}` || entitlementStatus(ent, config, /* @__PURE__ */ new Date()) !== "active") {
+        res.status(409).json({ success: false, error: "beta_access_unavailable" });
+        return;
+      }
+      res.json({ success: true, endsAt: ent.currentPeriodEnd });
+    } catch {
+      res.status(503).json({ success: false, error: "beta_redemption_unavailable" });
+    }
   });
   function applyReadyInvariant(app2) {
     if (app2.state === "ready" && !evaluateReadiness(app2).ready) {
@@ -2345,7 +2987,7 @@ function createFoundation(options = {}) {
     }
     const now = /* @__PURE__ */ new Date();
     const app2 = {
-      id: randomBytes3(12).toString("hex"),
+      id: randomBytes4(12).toString("hex"),
       tenantId: req.auth.tenantId,
       tenderRef: tenderRef.trim(),
       title: title.trim(),
@@ -2371,6 +3013,15 @@ function createFoundation(options = {}) {
     }
     res.json({ success: true, application: app2, readiness: evaluateReadiness(app2) });
   });
+  applicationsRouter.delete("/:id", async (req, res) => {
+    const app2 = await repos.applications.getById(req.auth.tenantId, req.params.id);
+    if (!app2) {
+      res.status(404).json({ success: false, error: "not_found" });
+      return;
+    }
+    await repos.applications.delete(req.auth.tenantId, req.params.id);
+    res.json({ success: true, message: "Bid draft deleted." });
+  });
   applicationsRouter.post("/:id/requirements", async (req, res) => {
     const app2 = await repos.applications.getById(req.auth.tenantId, req.params.id);
     if (!app2) {
@@ -2383,7 +3034,7 @@ function createFoundation(options = {}) {
       return;
     }
     const requirement = {
-      id: `req-${randomBytes3(6).toString("hex")}`,
+      id: `req-${randomBytes4(6).toString("hex")}`,
       label: label.trim(),
       source: {
         type: sourceType === "tender_clause" ? "tender_clause" : "official_rule",
@@ -2461,8 +3112,12 @@ function createFoundation(options = {}) {
   router.use(authRouter);
   router.use(accountRouter);
   router.use("/applications", applicationsRouter);
+  const apiCacheHeaders = (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  };
   const guardMiddleware = async (req, res, next) => {
-    if (!config.authRequired) {
+    if (!config.authRequired && (!req.auth || (await repos.entitlements.get(req.auth.tenantId))?.planId !== "test_cohort")) {
       next();
       return;
     }
@@ -2481,7 +3136,13 @@ function createFoundation(options = {}) {
     }
     try {
       const decision = await authorizeAndConsume(repos, config, req.auth.tenantId, rule.action);
-      if (decision.allowed) markConsumed(req, rule.action);
+      if (decision.allowed) {
+        markConsumed(req, rule.action, decision.periodKey);
+        const action = rule.action;
+        res.once("finish", () => {
+          if (res.statusCode >= 400) void releaseConsumption(req, action).catch(() => console.error("[foundation] Failed request allowance release unavailable"));
+        });
+      }
       if (!decision.allowed) {
         const status = decision.reason === "plan_limit_reached" ? 429 : 402;
         res.status(status).json({ success: false, error: decision.reason, entitlementStatus: decision.status });
@@ -2493,20 +3154,80 @@ function createFoundation(options = {}) {
       res.status(500).json({ success: false, error: "entitlement_check_failed" });
     }
   };
-  return { config, repos, originCheckMiddleware, sessionMiddleware, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, router, webhookRouter };
+  return { config, repos, originCheckMiddleware, sessionMiddleware, tenantWorkMiddleware, apiCacheHeaders, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
+}
+
+// src/lib/server/repos/profilePinMigration.ts
+var PinMigrationError = class extends Error {
+};
+async function migrateProfilePins(pool, key) {
+  if (!fieldEncryptionEnabled(key)) throw new PinMigrationError("Profile PIN migration requires a protection key.");
+  let client;
+  try {
+    client = await pool.connect();
+  } catch {
+    throw new PinMigrationError("Profile PIN migration could not acquire a database connection. Service startup stopped.");
+  }
+  let commitAttempted = false;
+  let discardConnection = false;
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '15s'");
+    await client.query("SET LOCAL statement_timeout = '60s'");
+    await client.query("SET LOCAL idle_in_transaction_session_timeout = '60s'");
+    await client.query("LOCK TABLE foundation_profiles IN SHARE ROW EXCLUSIVE MODE");
+    const { rows } = await client.query("SELECT tenant_id, profile FROM foundation_profiles");
+    const counts = { encrypted: 0, alreadyEncrypted: 0, empty: 0 };
+    const updates = [];
+    for (const row of rows) {
+      const pin = row.profile.taxComplianceStatusPin;
+      if (pin == null || pin === "") {
+        counts.empty++;
+        continue;
+      }
+      if (typeof pin !== "string") throw new PinMigrationError("Profile PIN migration found an unsupported field type. No rows changed.");
+      if (isEncryptedValue(pin)) {
+        if (decryptField(key, pin) === "") throw new PinMigrationError("Profile PIN migration cannot read existing protected data. Restore the protection key or investigate corruption. No rows changed.");
+        counts.alreadyEncrypted++;
+        continue;
+      }
+      updates.push({ tenantId: row.tenant_id, profile: { ...row.profile, taxComplianceStatusPin: encryptField(key, pin) } });
+    }
+    for (const update of updates) {
+      await client.query("UPDATE foundation_profiles SET profile=$2 WHERE tenant_id=$1", [update.tenantId, JSON.stringify(update.profile)]);
+      counts.encrypted++;
+    }
+    commitAttempted = true;
+    await client.query("COMMIT");
+    return counts;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      discardConnection = true;
+    }
+    if (commitAttempted) {
+      discardConnection = true;
+      throw new PinMigrationError("Profile PIN migration commit outcome is unconfirmed. Service startup stopped. Keep old releases stopped; verify with the same key before retrying.");
+    }
+    if (error instanceof PinMigrationError) throw error;
+    throw new PinMigrationError("Profile PIN migration failed before commit. Service startup stopped; verify database state before recovery.");
+  } finally {
+    client.release(discardConnection);
+  }
 }
 
 // src/lib/server/repos/mongo.ts
-import mongoose2, { Schema as Schema2 } from "mongoose";
-var TenantSchema = new Schema2({ _id: String, companyName: String, createdAt: Date }, { versionKey: false });
-var UserSchema = new Schema2({
+import mongoose, { Schema } from "mongoose";
+var TenantSchema = new Schema({ _id: String, companyName: String, createdAt: Date }, { versionKey: false });
+var UserSchema = new Schema({
   _id: String,
   tenantId: { type: String, index: true },
   email: { type: String, unique: true, index: true },
   passwordHash: String,
   createdAt: Date
 }, { versionKey: false });
-var SessionSchema = new Schema2({
+var SessionSchema = new Schema({
   _id: String,
   userId: String,
   tenantId: String,
@@ -2514,7 +3235,7 @@ var SessionSchema = new Schema2({
   expiresAt: Date,
   createdAt: Date
 }, { versionKey: false });
-var EntitlementSchema = new Schema2({
+var EntitlementSchema = new Schema({
   _id: String,
   planId: String,
   status: String,
@@ -2527,7 +3248,7 @@ var EntitlementSchema = new Schema2({
   lastEventId: String,
   updatedAt: Date
 }, { versionKey: false });
-var BillingEventSchema = new Schema2({
+var BillingEventSchema = new Schema({
   _id: String,
   provider: String,
   type: String,
@@ -2535,36 +3256,36 @@ var BillingEventSchema = new Schema2({
   occurredAt: Date,
   receivedAt: Date
 }, { versionKey: false });
-var UsageSchema = new Schema2({
+var UsageSchema = new Schema({
   _id: String,
   tenantId: String,
   periodKey: String,
   analyses: Number,
   serpapiLookups: Number
 }, { versionKey: false });
-var ProfileSchema = new Schema2({ _id: String, profile: Schema2.Types.Mixed, updatedAt: Date }, { versionKey: false });
-var ApplicationSchema = new Schema2({
+var ProfileSchema = new Schema({ _id: String, profile: Schema.Types.Mixed, updatedAt: Date }, { versionKey: false });
+var ApplicationSchema = new Schema({
   _id: String,
   tenantId: { type: String, index: true },
   tenderRef: String,
   title: String,
   state: String,
-  requirements: Schema2.Types.Mixed,
+  requirements: Schema.Types.Mixed,
   createdAt: Date,
   updatedAt: Date
 }, { versionKey: false });
 var models = () => ({
-  Tenant: mongoose2.models.FoundationTenant || mongoose2.model("FoundationTenant", TenantSchema),
-  User: mongoose2.models.FoundationUser || mongoose2.model("FoundationUser", UserSchema),
-  Session: mongoose2.models.FoundationSession || mongoose2.model("FoundationSession", SessionSchema),
-  Entitlement: mongoose2.models.FoundationEntitlement || mongoose2.model("FoundationEntitlement", EntitlementSchema),
-  BillingEvent: mongoose2.models.FoundationBillingEvent || mongoose2.model("FoundationBillingEvent", BillingEventSchema),
-  Usage: mongoose2.models.FoundationUsage || mongoose2.model("FoundationUsage", UsageSchema),
-  Profile: mongoose2.models.FoundationProfile || mongoose2.model("FoundationProfile", ProfileSchema),
-  Application: mongoose2.models.FoundationApplication || mongoose2.model("FoundationApplication", ApplicationSchema)
+  Tenant: mongoose.models.FoundationTenant || mongoose.model("FoundationTenant", TenantSchema),
+  User: mongoose.models.FoundationUser || mongoose.model("FoundationUser", UserSchema),
+  Session: mongoose.models.FoundationSession || mongoose.model("FoundationSession", SessionSchema),
+  Entitlement: mongoose.models.FoundationEntitlement || mongoose.model("FoundationEntitlement", EntitlementSchema),
+  BillingEvent: mongoose.models.FoundationBillingEvent || mongoose.model("FoundationBillingEvent", BillingEventSchema),
+  Usage: mongoose.models.FoundationUsage || mongoose.model("FoundationUsage", UsageSchema),
+  Profile: mongoose.models.FoundationProfile || mongoose.model("FoundationProfile", ProfileSchema),
+  Application: mongoose.models.FoundationApplication || mongoose.model("FoundationApplication", ApplicationSchema)
 });
 async function connectMongo(uri) {
-  await mongoose2.connect(uri, { serverSelectionTimeoutMS: 5e3 });
+  await mongoose.connect(uri, { serverSelectionTimeoutMS: 5e3 });
   await Promise.all(Object.values(models()).map((model) => model.init()));
 }
 var strip = (doc) => {
@@ -2699,6 +3420,9 @@ function createMongoRepos() {
       },
       async put(p) {
         await m.Profile.updateOne({ _id: p.tenantId }, { $set: { profile: p.profile, updatedAt: p.updatedAt } }, { upsert: true });
+      },
+      async delete(tenantId) {
+        await m.Profile.deleteOne({ _id: tenantId });
       }
     },
     applications: {
@@ -2715,6 +3439,33 @@ function createMongoRepos() {
       },
       async put(a) {
         await m.Application.updateOne({ _id: `${a.tenantId}:${a.id}` }, { $set: { ...a } }, { upsert: true });
+      },
+      async delete(tenantId, id) {
+        await m.Application.deleteOne({ _id: `${tenantId}:${id}` });
+      }
+    },
+    stats: {
+      async overview(periodKey) {
+        const [tenants, users, entAgg, usageAgg] = await Promise.all([
+          m.Tenant.countDocuments(),
+          m.User.countDocuments(),
+          m.Entitlement.aggregate([{ $group: { _id: "$status", n: { $sum: 1 } } }]),
+          m.Usage.aggregate([
+            { $match: { periodKey } },
+            { $group: { _id: null, analyses: { $sum: "$analyses" }, serpapiLookups: { $sum: "$serpapiLookups" } } }
+          ])
+        ]);
+        const entitlementsByStatus = {};
+        for (const row of entAgg) {
+          entitlementsByStatus[row._id || "none"] = row.n;
+        }
+        const u = usageAgg[0] || {};
+        return {
+          tenants,
+          users,
+          entitlementsByStatus,
+          usage: { analyses: u.analyses || 0, serpapiLookups: u.serpapiLookups || 0 }
+        };
       }
     }
   };
@@ -2791,11 +3542,76 @@ CREATE TABLE IF NOT EXISTS foundation_applications (
 async function ensurePostgresSchema(pool) {
   await pool.query(POSTGRES_SCHEMA);
 }
-async function connectPostgres(uri) {
+async function connectPostgres(uri, enableDeletionConstraints = false) {
   const ssl = process.env.PGSSL === "disable" ? false : { rejectUnauthorized: true };
-  const pool = new Pool({ connectionString: uri, max: 5, ssl });
-  await ensurePostgresSchema(pool);
-  return pool;
+  const pool = new Pool({ connectionString: uri, max: 5, ssl, connectionTimeoutMillis: 15e3 });
+  try {
+    await ensurePostgresSchema(pool);
+    if (enableDeletionConstraints) await ensureTenantForeignKeys(pool);
+    return pool;
+  } catch {
+    try {
+      await pool.end();
+    } catch {
+    }
+    throw new Error("Postgres initialization failed. Check database connectivity and schema permissions privately.");
+  }
+}
+async function ensureTenantForeignKeys(pool) {
+  for (const table of ["users", "sessions", "entitlements", "billing_events", "usage_counters", "profiles", "applications"]) {
+    const name = `foundation_${table}_tenant_live`;
+    await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${name}' AND conrelid = 'foundation_${table}'::regclass) THEN
+        ALTER TABLE foundation_${table} ADD CONSTRAINT ${name}
+        FOREIGN KEY (tenant_id) REFERENCES foundation_tenants(id) ON DELETE CASCADE;
+      END IF;
+    END $$`);
+  }
+}
+async function erasePostgresTenant(pool, tenantId) {
+  const client = await pool.connect();
+  let committing = false;
+  let discard = false;
+  let released = false;
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    await client.query("SET LOCAL statement_timeout = '30s'");
+    const tenant = await client.query("SELECT id FROM foundation_tenants WHERE id=$1 FOR UPDATE", [tenantId]);
+    if (!tenant.rows.length) {
+      await client.query("ROLLBACK");
+      return;
+    }
+    await client.query("SELECT tenant_id FROM foundation_entitlements WHERE tenant_id=$1 FOR UPDATE", [tenantId]);
+    const external = await client.query(`SELECT 1 FROM foundation_entitlements WHERE tenant_id=$1
+      AND ((provider_name IS NOT NULL AND provider_name NOT IN ('mock','operator_comp')) OR (provider_name IS NULL AND provider_subscription_ref IS NOT NULL))
+      UNION ALL SELECT 1 FROM foundation_billing_events WHERE tenant_id=$1 AND provider NOT IN ('mock','operator_comp')`, [tenantId]);
+    if (external.rows.length) throw new AccountDeletionError("billing_resolution_required");
+    await client.query("DELETE FROM foundation_tenants WHERE id=$1", [tenantId]);
+    committing = true;
+    await client.query("COMMIT");
+  } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      discard = true;
+    }
+    if (committing) {
+      discard = true;
+      client.release(true);
+      released = true;
+      try {
+        const check = await pool.query("SELECT id FROM foundation_tenants WHERE id=$1", [tenantId]);
+        if (!check.rows.length) return;
+      } catch {
+      }
+      throw new AccountDeletionError("deletion_outcome_unconfirmed", 503);
+    }
+    if (e instanceof AccountDeletionError) throw e;
+    throw new AccountDeletionError("account_deletion_failed", 503);
+  } finally {
+    if (!released) client.release(discard);
+  }
 }
 var USAGE_COLUMN = {
   analyses: "analyses",
@@ -2823,8 +3639,36 @@ function toApplication(row) {
     updatedAt: asDate(row.updated_at)
   };
 }
-function createPostgresRepos(pool) {
+function createPostgresRepos(pool, tenantConstraintsReady = false) {
   return {
+    accountDeletion: tenantConstraintsReady && typeof pool.connect === "function" ? {
+      erase: (tenantId) => erasePostgresTenant(pool, tenantId)
+    } : void 0,
+    beta: {
+      async redeem(e) {
+        await pool.query(
+          `INSERT INTO foundation_entitlements
+          (tenant_id,plan_id,status,current_period_end,cancel_at_period_end,provider_name,
+           provider_subscription_ref,refunded_at,last_event_at,last_event_id,updated_at)
+          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+          WHERE EXISTS (SELECT 1 FROM foundation_tenants WHERE id=$1)
+          ON CONFLICT (tenant_id) DO NOTHING`,
+          [
+            e.tenantId,
+            e.planId,
+            e.status,
+            e.currentPeriodEnd,
+            e.cancelAtPeriodEnd,
+            e.providerName,
+            e.providerSubscriptionRef,
+            e.refundedAt,
+            e.lastEventAt,
+            e.lastEventId,
+            e.updatedAt
+          ]
+        );
+      }
+    },
     tenants: {
       async create(t) {
         await pool.query(
@@ -3013,6 +3857,9 @@ function createPostgresRepos(pool) {
            ON CONFLICT (tenant_id) DO UPDATE SET profile = EXCLUDED.profile, updated_at = EXCLUDED.updated_at`,
           [p.tenantId, JSON.stringify(p.profile), p.updatedAt]
         );
+      },
+      async delete(tenantId) {
+        await pool.query("DELETE FROM foundation_profiles WHERE tenant_id = $1", [tenantId]);
       }
     },
     applications: {
@@ -3037,12 +3884,44 @@ function createPostgresRepos(pool) {
         );
         return rows.map(toApplication);
       },
+      async delete(tenantId, id) {
+        await pool.query("DELETE FROM foundation_applications WHERE tenant_id = $1 AND id = $2", [tenantId, id]);
+      },
       async put(a) {
         await pool.query(
           `UPDATE foundation_applications SET tender_ref = $3, title = $4, state = $5, requirements = $6, updated_at = $7
            WHERE tenant_id = $1 AND id = $2`,
           [a.tenantId, a.id, a.tenderRef, a.title, a.state, JSON.stringify(a.requirements), a.updatedAt]
         );
+      }
+    },
+    stats: {
+      async overview(periodKey) {
+        const counts = await pool.query(
+          `SELECT (SELECT count(*)::int FROM foundation_tenants) AS tenants,
+                  (SELECT count(*)::int FROM foundation_users) AS users`
+        );
+        const ent = await pool.query(
+          `SELECT coalesce(status, 'none') AS status, count(*)::int AS n
+           FROM foundation_entitlements GROUP BY 1`
+        );
+        const usageRows = await pool.query(
+          `SELECT coalesce(sum(analyses), 0)::int AS analyses,
+                  coalesce(sum(serpapi_lookups), 0)::int AS serpapi_lookups
+           FROM foundation_usage_counters WHERE period_key = $1`,
+          [periodKey]
+        );
+        const entitlementsByStatus = {};
+        for (const row of ent.rows) entitlementsByStatus[row.status] = row.n;
+        return {
+          tenants: counts.rows[0].tenants,
+          users: counts.rows[0].users,
+          entitlementsByStatus,
+          usage: {
+            analyses: usageRows.rows[0].analyses,
+            serpapiLookups: usageRows.rows[0].serpapi_lookups
+          }
+        };
       }
     }
   };
@@ -3051,8 +3930,20 @@ function createPostgresRepos(pool) {
 // src/lib/server/repos/index.ts
 async function createStoreRepos(config) {
   if (config.store === "postgres") {
-    const pool = await connectPostgres(config.postgresUri);
-    return createPostgresRepos(pool);
+    const pool = await connectPostgres(config.postgresUri, config.accountDeletionEnabled);
+    try {
+      if (fieldEncryptionEnabled(config.profileFieldKey)) {
+        const counts = await migrateProfilePins(pool, config.profileFieldKey);
+        console.log("[Profile PIN migration]", counts);
+      }
+      return createPostgresRepos(pool, config.accountDeletionEnabled);
+    } catch (error) {
+      try {
+        await pool.end();
+      } catch {
+      }
+      throw error;
+    }
   }
   if (config.store === "mongo") {
     await connectMongo(config.mongoUri);
@@ -3065,7 +3956,16 @@ async function createStoreRepos(config) {
 dotenv.config();
 var foundationConfig = loadConfig();
 assertSafeConfig(foundationConfig);
-var foundation = createFoundation({ config: foundationConfig, repos: await createStoreRepos(foundationConfig) });
+var foundation = createFoundation({
+  config: foundationConfig,
+  repos: await createStoreRepos(foundationConfig),
+  eraseEphemeral: (tenantId) => eraseTenantEphemeral(tenantId, {
+    tenders: inMemoryTenderStore,
+    datasets: inMemoryDatasets,
+    jobs: inMemoryJobs,
+    timers: simulatedJobTimers
+  })
+});
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path.dirname(__filename);
 var app = express();
@@ -3093,27 +3993,24 @@ function heavyOpLimiter(req, res, next) {
   });
   next();
 }
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
 app.use("/api/billing/webhook", foundation.webhookRouter);
 app.use(express.json({ limit: "50mb" }));
 app.use(foundation.originCheckMiddleware);
+app.use("/api", foundation.apiCacheHeaders);
 app.use(foundation.sessionMiddleware);
+app.use(foundation.tenantWorkMiddleware);
 app.use(foundation.guardMiddleware);
 app.use("/api", foundation.router);
+app.use("/api/admin", foundation.adminRouter);
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
-var userSmeProfile = {
-  companyName: "Apex Strategic Solutions (Pty) Ltd",
-  registrationNumber: "2023/849201/07",
-  csdNumber: "MAAA0821945",
-  taxComplianceStatusPin: "TCS-9482104-Z",
-  bbbeeLevel: 1,
-  bbbeeType: "EME",
-  cidbGrading: "7CE PE",
-  coidaGoodStandingValid: true,
-  coidaExpiryDate: "2027-04-30",
-  contactEmail: "tenders@apexstrategic.co.za",
-  contactPhone: "+27 (0)11 482 9200",
-  province: "Western Cape"
-};
+var userSmeProfile = {};
 SAMPLE_TENDERS.forEach((t) => {
   inMemoryTenderStore.set(t.referenceNumber, t);
 });
@@ -3295,8 +4192,9 @@ app.get("/api/health", (req, res) => {
     localModelCheck: "on-demand via /api/models/detect",
     sentryTracing: Boolean(process.env.SENTRY_DSN),
     authRequired: foundation.config.authRequired,
+    profileFieldEncryption: fieldEncryptionEnabled(foundation.config.profileFieldKey) ? "on" : "off",
     store: foundation.config.store,
-    privacyNote: "PII redaction before AI processing currently covers ID-number and card-like digit sequences only.",
+    privacyNote: DOCUMENT_REDACTION_NOTICE,
     sampleTendersLoaded: SAMPLE_TENDERS.length
   });
 });
@@ -3354,56 +4252,7 @@ app.get("/api/scrape", async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-app.post("/api/etenders/sync", async (req, res) => {
-  try {
-    const allowSerpApi = await foundation.serpApiAccess(req);
-    const result = await fetchSouthAfricanTenders(void 0, "Western Cape", { allowSerpApi });
-    if (!result.serpApiConsumed) await foundation.releaseConsumption(req, "serpapi");
-    result.leads.forEach((l) => {
-      if (!inMemoryTenderStore.has(l.referenceNumber)) {
-        inMemoryTenderStore.set(l.referenceNumber, {
-          tenantId: req.auth ? req.auth.tenantId : void 0,
-          title: l.title,
-          referenceNumber: l.referenceNumber,
-          issuingDepartment: l.department,
-          closingDate: l.closingDate,
-          province: l.province,
-          category: l.category,
-          cidbGradingRequired: l.cidbGrading,
-          estimatedBudget: l.budgetEst,
-          rawTextExcerpt: l.rawSampleText || l.snippet,
-          extractedComplianceChecklist: {
-            csdRequired: l.csdMandatory,
-            sarsPinRequired: true,
-            bbbeeRequired: true,
-            coidaRequired: Boolean(l.cidbGrading),
-            additionalDocuments: ["SBD 1", "SBD 4", "SBD 6.1"]
-          },
-          evaluationCriteria: {
-            preferencePointsSystem: "80/20",
-            technicalThresholdPercentage: 70
-          },
-          createdAt: /* @__PURE__ */ new Date()
-        });
-      }
-    });
-    res.json({
-      success: true,
-      syncedCount: result.syncedCount,
-      westernCapeCount: result.leads.filter((l) => l.province.includes("Western Cape")).length,
-      source: result.source,
-      isLiveEtendersPortal: result.isLiveEtendersPortal,
-      timestamp: (/* @__PURE__ */ new Date()).toISOString()
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-app.get("/api/tenders", (req, res) => {
-  let tenders = Array.from(inMemoryTenderStore.values());
-  tenders = req.auth ? tenders.filter((t) => !t.tenantId || t.tenantId === req.auth.tenantId) : tenders.filter((t) => !t.tenantId);
-  res.json({ success: true, count: tenders.length, tenders });
-});
+registerTenderFeedRoutes(app, { foundation, store: inMemoryTenderStore });
 app.get("/api/models", (req, res) => {
   res.json({
     success: true,
@@ -3412,7 +4261,7 @@ app.get("/api/models", (req, res) => {
     models: PLATFORM_MODELS
   });
 });
-app.get("/api/models/detect", foundation.requireAuth, async (req, res) => {
+app.get("/api/models/detect", foundation.requireAdmin, async (req, res) => {
   try {
     const customEndpoint = typeof req.query.endpoint === "string" ? req.query.endpoint : void 0;
     if (customEndpoint && !isLoopbackEndpoint(customEndpoint)) {
@@ -3438,7 +4287,7 @@ app.get("/api/models/detect", foundation.requireAuth, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.post("/api/models/active", foundation.requireAuth, async (req, res) => {
+app.post("/api/models/active", foundation.requireAdmin, async (req, res) => {
   try {
     const { modelId } = req.body || {};
     if (typeof modelId !== "string" || !modelId) {
@@ -3458,20 +4307,22 @@ app.post("/api/models/active", foundation.requireAuth, async (req, res) => {
     res.status(400).json({ success: false, error: err.message });
   }
 });
-app.get("/api/profile", async (req, res) => {
-  if (req.auth) {
-    const stored = await foundation.repos.profiles.get(req.auth.tenantId);
-    res.json({ success: true, profile: stored ? stored.profile : {} });
-    return;
-  }
-  res.json({ success: true, profile: userSmeProfile });
+app.get("/api/profile", foundation.requireAuth, async (req, res) => {
+  const stored = await foundation.repos.profiles.get(req.auth.tenantId);
+  const profile = stored ? profileForClient(foundation.config.profileFieldKey, stored.profile) : {};
+  res.json({ success: true, profile });
+});
+app.delete("/api/profile", foundation.requireAuth, async (req, res) => {
+  await foundation.repos.profiles.delete(req.auth.tenantId);
+  res.json({ success: true, message: "Saved company profile deleted." });
 });
 app.post("/api/profile", foundation.requireAuth, async (req, res) => {
   try {
     const existing = await foundation.repos.profiles.get(req.auth.tenantId);
-    const merged = { ...existing ? existing.profile : {}, ...req.body };
-    await foundation.repos.profiles.put({ tenantId: req.auth.tenantId, profile: merged, updatedAt: /* @__PURE__ */ new Date() });
-    res.json({ success: true, profile: merged, message: "SME profile updated." });
+    const key = foundation.config.profileFieldKey;
+    const saved = prepareProfileSave(key, existing?.profile || {}, req.body || {});
+    await foundation.repos.profiles.put({ tenantId: req.auth.tenantId, profile: saved, updatedAt: /* @__PURE__ */ new Date() });
+    res.json({ success: true, profile: profileForClient(key, saved) });
   } catch (error) {
     res.status(400).json({ success: false, error: error.message });
   }
@@ -3488,16 +4339,18 @@ app.post("/api/analyze", heavyOpLimiter, async (req, res) => {
       return;
     }
     const ref = referenceId || `RFP-ZA-${Date.now().toString().slice(-5)}`;
-    let profile = companyProfile || userSmeProfile;
+    let profile = companyProfile || (Object.keys(userSmeProfile).length ? userSmeProfile : void 0);
     let selectedModelId = null;
     if (req.auth) {
       const stored = await foundation.repos.profiles.get(req.auth.tenantId);
       if (stored?.profile) {
+        stored.profile = decryptProfileFields(foundation.config.profileFieldKey, stored.profile);
         selectedModelId = typeof stored.profile.llmModelId === "string" ? stored.profile.llmModelId : null;
         if (!companyProfile) profile = stored.profile;
       }
     }
-    const llmConfig = resolveServerLlmConfig(selectedModelId);
+    const isBeta = req.auth && (await foundation.repos.entitlements.get(req.auth.tenantId))?.planId === "test_cohort";
+    const llmConfig = resolveServerLlmConfig(isBeta ? "gemma2-local" : selectedModelId);
     const allowCloudLlm = await foundation.cloudLlmAccess(req);
     let result;
     try {
@@ -3512,12 +4365,6 @@ app.post("/api/analyze", heavyOpLimiter, async (req, res) => {
       await foundation.releaseConsumption(req, "analysis");
       throw pipelineErr;
     }
-    if (req.auth && result.record) {
-      result.record.tenantId = req.auth.tenantId;
-      if (result.record.referenceNumber) {
-        inMemoryTenderStore.set(result.record.referenceNumber, result.record);
-      }
-    }
     res.json({
       success: true,
       tender: result.record,
@@ -3531,11 +4378,11 @@ app.post("/api/analyze", heavyOpLimiter, async (req, res) => {
     res.status(500).json({ success: false, error: error.message || "Pipeline analysis failed" });
   }
 });
-app.get("/api/finetune/datasets", (req, res) => {
+app.get("/api/finetune/datasets", foundation.requireAdmin, (req, res) => {
   const visible = inMemoryDatasets.filter((d) => !d.tenantId || req.auth && d.tenantId === req.auth.tenantId);
   res.json({ success: true, datasets: visible });
 });
-app.post("/api/finetune/datasets", foundation.requireAuth, (req, res) => {
+app.post("/api/finetune/datasets", foundation.requireAdmin, (req, res) => {
   try {
     const { name, description, category, examples, format } = req.body;
     const newDs = {
@@ -3557,115 +4404,13 @@ app.post("/api/finetune/datasets", foundation.requireAuth, (req, res) => {
     res.status(400).json({ success: false, error: err.message });
   }
 });
-app.post("/api/finetune/datasets/generate-from-tenders", foundation.requireAuth, (req, res) => {
-  try {
-    const tenders = Array.from(inMemoryTenderStore.values()).filter((t) => !t.tenantId || t.tenantId === req.auth.tenantId);
-    const generatedExamples = tenders.map((t, idx) => ({
-      id: `gen-ex-${idx + 1}-${Date.now().toString().slice(-4)}`,
-      domain: t.province?.includes("Western Cape") ? "Western Cape SCM" : t.cidbGradingRequired ? "CIDB Act" : "PPPFA 2022",
-      prompt: `Audit South African procurement document "${t.title}" (Ref: ${t.referenceNumber}) issued by ${t.issuingDepartment}. Extract mandatory statutory eligibility, CIDB grading, and preference points system.`,
-      completion: JSON.stringify({
-        title: t.title,
-        referenceNumber: t.referenceNumber,
-        issuingDepartment: t.issuingDepartment,
-        province: t.province,
-        closingDate: t.closingDate,
-        pointsSystem: t.evaluationCriteria?.preferencePointsSystem || "80/20",
-        cidbGrading: t.cidbGradingRequired || null,
-        mandatoryEligibility: {
-          csdMaAA: t.extractedComplianceChecklist?.csdRequired ?? true,
-          sarsTcsPin: t.extractedComplianceChecklist?.sarsPinRequired ?? true,
-          bbbeeStatus: t.extractedComplianceChecklist?.bbbeeRequired ?? true,
-          coidaGoodStanding: t.extractedComplianceChecklist?.coidaRequired ?? false,
-          compulsoryBriefing: t.extractedComplianceChecklist?.compulsoryBriefing ?? false,
-          designatedSubcontracting30Percent: t.extractedComplianceChecklist?.subcontracting30Percent ?? false
-        },
-        returnableSchedules: t.extractedComplianceChecklist?.additionalDocuments || ["SBD 1", "SBD 4", "SBD 6.1"]
-      }, null, 2),
-      referenceRfp: t.referenceNumber,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    }));
-    let ds = inMemoryDatasets.find((d) => d.id === "dataset-sa-procure-v1");
-    if (ds) {
-      ds.examples = [...generatedExamples, ...ds.examples];
-      ds.exampleCount = ds.examples.length;
-      ds.tokenCountEst = ds.examples.length * 1400;
-    }
-    res.json({
-      success: true,
-      generatedCount: generatedExamples.length,
-      dataset: ds
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-app.get("/api/finetune/jobs", (req, res) => {
+registerGeneratedDatasetRoute(app, { foundation, store: inMemoryTenderStore, datasets: inMemoryDatasets });
+app.get("/api/finetune/jobs", foundation.requireAdmin, (req, res) => {
   const visible = inMemoryJobs.filter((j) => !j.tenantId || req.auth && j.tenantId === req.auth.tenantId);
   res.json({ success: true, jobs: visible });
 });
-app.post("/api/finetune/start", foundation.requireAuth, (req, res) => {
-  try {
-    const { baseModel, datasetId, loraRank, loraAlpha, epochs, learningRate } = req.body;
-    const dataset = inMemoryDatasets.find((d) => d.id === datasetId && (!d.tenantId || d.tenantId === req.auth.tenantId)) || inMemoryDatasets[0];
-    const jobId = `ft-job-${Date.now().toString().slice(-5)}`;
-    const outputName = `${baseModel.includes("llama") ? "Llama 3.1 8B" : "Gemma 2 9B"} - SA Procurement LoRA (Job ${jobId})`;
-    const newJob = {
-      tenantId: req.auth.tenantId,
-      simulated: true,
-      id: jobId,
-      jobName: `job-${jobId}`,
-      baseModel: baseModel || "meta-llama/Meta-Llama-3.1-8B-Instruct",
-      datasetId: dataset.id,
-      datasetName: dataset.name,
-      status: "training",
-      progress: 5,
-      currentEpoch: 1,
-      totalEpochs: Number(epochs) || 3,
-      currentStep: 2,
-      totalSteps: (Number(epochs) || 3) * 20,
-      currentLoss: 2.38,
-      learningRate: Number(learningRate) || 2e-4,
-      vramUsageGb: 7.6,
-      etaSeconds: 120,
-      lossHistory: [
-        { step: 1, loss: 2.62 },
-        { step: 2, loss: 2.38 }
-      ],
-      loraRank: Number(loraRank) || 16,
-      loraAlpha: Number(loraAlpha) || 32,
-      loraDropout: 0.05,
-      adapterArtifactName: "adapter_model.safetensors",
-      outputModelName: outputName,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    inMemoryJobs.unshift(newJob);
-    let step = 2;
-    const interval = setInterval(() => {
-      step += 3;
-      const totalSteps = newJob.totalSteps;
-      const progress = Math.min(100, Math.round(step / totalSteps * 100));
-      const epoch = Math.min(newJob.totalEpochs, Math.ceil(step / totalSteps * newJob.totalEpochs));
-      const decayLoss = Number((0.28 + 2.1 * Math.exp(-step / 14) + Math.random() * 0.04).toFixed(3));
-      newJob.progress = progress;
-      newJob.currentStep = Math.min(step, totalSteps);
-      newJob.currentEpoch = epoch;
-      newJob.currentLoss = decayLoss;
-      newJob.etaSeconds = Math.max(0, Math.round((totalSteps - step) * 2.2));
-      newJob.lossHistory.push({ step: newJob.currentStep, loss: decayLoss });
-      if (step >= totalSteps) {
-        clearInterval(interval);
-        newJob.status = "completed";
-        newJob.progress = 100;
-        newJob.etaSeconds = 0;
-        newJob.completedAt = (/* @__PURE__ */ new Date()).toISOString();
-      }
-    }, 1800);
-    res.json({ success: true, job: newJob, simulated: true, message: "Simulated training run for the studio preview - no GPU execution, no adapter artifact is produced. Use the exported Python script for real training." });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+var simulatedJobTimers = /* @__PURE__ */ new Map();
+registerSimulatedTrainingRoute(app, { foundation, datasets: inMemoryDatasets, jobs: inMemoryJobs, timers: simulatedJobTimers });
 var deployHandler = (req, res) => {
   try {
     const jobId = req.params.jobId || (req.body || {}).jobId;
@@ -3684,9 +4429,9 @@ var deployHandler = (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
-app.post("/api/finetune/deploy", foundation.requireAuth, deployHandler);
-app.post("/api/finetune/deploy/:jobId", foundation.requireAuth, deployHandler);
-app.post("/api/finetune/compare", foundation.requireAuth, async (req, res) => {
+app.post("/api/finetune/deploy", foundation.requireAdmin, deployHandler);
+app.post("/api/finetune/deploy/:jobId", foundation.requireAdmin, deployHandler);
+app.post("/api/finetune/compare", foundation.requireAdmin, async (req, res) => {
   try {
     const { prompt } = req.body;
     const testPrompt = prompt || "What are the mandatory returnables and PPPFA formula for Drakenstein Municipality basic services tender?";
@@ -3718,7 +4463,7 @@ app.post("/api/finetune/compare", foundation.requireAuth, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-app.get("/api/finetune/export-script", (req, res) => {
+app.get("/api/finetune/export-script", foundation.requireAdmin, (req, res) => {
   const pythonScript = `# ==============================================================================
 # TenderAgent South Africa - Llama 3.1 8B / Gemma 2 LoRA Fine-Tuning Pipeline
 # Optimized for Unsloth / Hugging Face PEFT on NVIDIA GPUs (RTX 3090/4090, A100, H100)

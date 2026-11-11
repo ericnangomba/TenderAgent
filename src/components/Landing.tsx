@@ -13,7 +13,7 @@ const features = [
   },
   {
     title: 'Bid response skeletons',
-    body: 'Turn the requirements into a structured .docx response framework aligned to the tender, ready for your pricing and technical content.',
+    body: 'Turn the requirements into a structured Word-compatible .doc response framework aligned to the tender, ready for your pricing and technical content.',
   },
   {
     title: 'Live tender feed & PPPFA math',

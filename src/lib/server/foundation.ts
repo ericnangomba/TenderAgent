@@ -10,10 +10,10 @@ import type { FoundationRepos } from './repos/types';
 import type { GatedAction } from './entitlement';
 import { createMemoryRepos } from './repos/memory';
 import { createAuthRouter, createSessionMiddleware } from './auth';
-import { authorizeAndConsume, effectiveStatus, currentPeriodKey, type AccessDecision } from './entitlement';
+import { authorizeAndConsume, entitlementStatus, currentPeriodKey, usagePeriodKey, type AccessDecision } from './entitlement';
 import { createWebhookRouter, MockBillingProvider, type BillingProvider } from './billing';
 import { evaluateReadiness, seedRequirementsForTender, type BidApplication, type Requirement } from './readiness';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { AccountDeletionError, TenantWorkCoordinator } from './accountLifecycle';
 import { verifyPassword } from './passwords';
 
@@ -74,8 +74,8 @@ export interface Foundation {
 
 /** Marker for units the guard/access helpers consumed on behalf of a request. */
 const CONSUMED = Symbol.for('tenderagent.consumed');
-function markConsumed(req: Request, action: GatedAction): void {
-  (req as any)[CONSUMED] = { ...(req as any)[CONSUMED], [action]: true };
+function markConsumed(req: Request, action: GatedAction, periodKey: string): void {
+  (req as any)[CONSUMED] = { ...(req as any)[CONSUMED], [action]: periodKey };
 }
 
 /** Spend-bearing routes and the usage action they consume. */
@@ -176,13 +176,14 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
   const serpApiAccess = async (req: Request): Promise<boolean> => {
     if (!req.auth) return false;
     try {
+      if ((await repos.entitlements.get(req.auth.tenantId))?.planId === 'test_cohort') return false;
       // Exactly once, in every mode: reuse this request's existing claim when
       // the route guard already made one (AUTH_REQUIRED mode); otherwise claim
       // the allowance here. A call on an unguarded route can never run
       // unmetered, and a guarded route never double-counts.
       if ((req as any)[CONSUMED]?.serpapi) return true;
       const decision: AccessDecision = await authorizeAndConsume(repos, config, req.auth.tenantId, 'serpapi');
-      if (decision.allowed) markConsumed(req, 'serpapi');
+      if (decision.allowed) markConsumed(req, 'serpapi', decision.periodKey!);
       return decision.allowed;
     } catch (err) {
       // Fail closed: when usage metering cannot be confirmed, no paid credits burn.
@@ -194,6 +195,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
   const cloudLlmAccess = async (req: Request): Promise<boolean> => {
     if (!req.auth) return false;
     try {
+      if ((await repos.entitlements.get(req.auth.tenantId))?.planId === 'test_cohort') return false;
       // Exactly once, in every mode - same shape as serpApiAccess. Previously
       // this only CHECKED status while the analysis allowance was consumed by
       // the guarded-mode middleware alone, so with AUTH_REQUIRED unset an
@@ -201,7 +203,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
       // claimed atomically here whenever the guard did not already claim it.
       if ((req as any)[CONSUMED]?.analysis) return true;
       const decision: AccessDecision = await authorizeAndConsume(repos, config, req.auth.tenantId, 'analysis');
-      if (decision.allowed) markConsumed(req, 'analysis');
+      if (decision.allowed) markConsumed(req, 'analysis', decision.periodKey!);
       return decision.allowed;
     } catch (err) {
       // Fail closed: when usage metering cannot be confirmed, no paid credits burn.
@@ -213,8 +215,9 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
   const releaseConsumption = async (req: Request, action: GatedAction): Promise<void> => {
     const consumed = (req as any)[CONSUMED];
     if (!req.auth || !consumed?.[action]) return;
+    const periodKey = consumed[action];
     consumed[action] = false;
-    await repos.usage.release(req.auth.tenantId, currentPeriodKey(new Date()), action === 'analysis' ? 'analyses' : 'serpapiLookups');
+    await repos.usage.release(req.auth.tenantId, periodKey, action === 'analysis' ? 'analyses' : 'serpapiLookups');
   };
 
   const requireAuth = (req: Request, res: Response, next: NextFunction): void => {
@@ -265,53 +268,8 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
   // requireAdmin on every route; grants are inert until an operator (Eric)
   // makes one - this mechanism alone activates nothing.
   adminRouter.post('/test-access/grant', requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const { email, days } = req.body || {};
-      if (typeof email !== 'string' || !email.includes('@')) {
-        res.status(400).json({ success: false, error: 'valid email required' });
-        return;
-      }
-      const dayCount = Number(days);
-      if (!Number.isInteger(dayCount) || dayCount < 1 || dayCount > 90) {
-        res.status(400).json({ success: false, error: 'days must be an integer between 1 and 90' });
-        return;
-      }
-      const user = await repos.users.getByEmail(email.toLowerCase());
-      if (!user) {
-        res.status(404).json({ success: false, error: 'no account with that email' });
-        return;
-      }
-      const now = new Date();
-      const existing = await repos.entitlements.get(user.tenantId);
-      if (
-        existing &&
-        existing.planId !== 'test_cohort' &&
-        existing.status !== null &&
-        effectiveStatus(existing, now, config.pastDueGraceDays) === 'active'
-      ) {
-        // Never overwrite a live paid subscription with a comp grant.
-        res.status(409).json({ success: false, error: 'account_has_active_paid_subscription', entitlementUnchanged: true });
-        return;
-      }
-      const periodEnd = new Date(now.getTime() + dayCount * 24 * 60 * 60 * 1000);
-      await repos.entitlements.put({
-        tenantId: user.tenantId,
-        planId: 'test_cohort',
-        status: 'active',
-        currentPeriodEnd: periodEnd,
-        cancelAtPeriodEnd: false,
-        providerName: 'operator_comp',
-        providerSubscriptionRef: `comp-grant by ${req.auth!.userId} at ${now.toISOString()}`,
-        refundedAt: null,
-        lastEventAt: now,
-        lastEventId: `comp-${now.getTime()}`,
-        updatedAt: now,
-      });
-      console.log(`[admin] test-access GRANT tenant=${user.tenantId} email=${email.toLowerCase()} days=${dayCount} by=${req.auth!.userId} at=${now.toISOString()}`);
-      res.json({ success: true, tenantId: user.tenantId, planId: 'test_cohort', currentPeriodEnd: periodEnd });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
+    // Legacy grants must not bypass campaign dates/account-bound redemption.
+    res.status(409).json({ success: false, error: 'beta_code_redemption_required' });
   });
 
   adminRouter.post('/test-access/revoke', requireAdmin, async (req: Request, res: Response) => {
@@ -357,7 +315,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
         success: true,
         tenantId: user.tenantId,
         entitlement: ent
-          ? { planId: ent.planId, status: ent.status, currentPeriodEnd: ent.currentPeriodEnd, effectiveStatus: effectiveStatus(ent, new Date(), config.pastDueGraceDays) }
+          ? { planId: ent.planId, status: ent.status, currentPeriodEnd: ent.currentPeriodEnd, effectiveStatus: entitlementStatus(ent, config, new Date()) }
           : { effectiveStatus: 'none' },
       });
     } catch (err: any) {
@@ -402,25 +360,58 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     }
     const now = new Date();
     const ent = await repos.entitlements.get(req.auth.tenantId);
-    const usage = await repos.usage.get(req.auth.tenantId, currentPeriodKey(now));
+    const usage = await repos.usage.get(req.auth.tenantId, usagePeriodKey(ent, now));
     const plan = getPlan(ent?.planId, config.plans);
     res.json({
       success: true,
       account: {
+        beta: { redeemAvailable: Boolean(repos.beta && config.betaCampaign && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
+          endsAt: config.betaCampaign?.endsAt || null },
         accountDeletionAvailable: config.accountDeletionEnabled && Boolean(repos.accountDeletion),
         tenantId: req.auth.tenantId,
         email: req.auth.email,
         entitlement: ent
-          ? { ...ent, effectiveStatus: effectiveStatus(ent, now, config.pastDueGraceDays) }
+          ? { ...ent, effectiveStatus: entitlementStatus(ent, config, now) }
           : { effectiveStatus: 'none' },
         usage,
         // Own plan's usage allowances only. No plan catalog or pricing here:
         // the R250/60/30 figures are provisional config, not a public offer.
         allowances: plan
-          ? { includedAnalyses: plan.includedAnalyses, includedSerpapiLookups: plan.includedSerpapiLookups }
+          ? { includedAnalyses: ent?.planId === 'test_cohort' ? 20 : plan.includedAnalyses, includedSerpapiLookups: ent?.planId === 'test_cohort' ? 0 : plan.includedSerpapiLookups }
           : null,
       },
     });
+  });
+
+  // No plaintext invite code is stored or logged. Account ID, not self-asserted
+  // signup email, binds an operator-approved invite. Campaign is off by default.
+  const betaAttempts = new Map<string, { count: number; until: number }>();
+  accountRouter.post('/beta/redeem', requireAuth, async (req: Request, res: Response) => {
+    const now = new Date(), c = config.betaCampaign;
+    const key = req.auth!.userId;
+    for (const [id, a] of betaAttempts) if (a.until <= now.getTime()) betaAttempts.delete(id);
+    const attempts = betaAttempts.get(key) || { count: 0, until: now.getTime() + 600000 };
+    if (attempts.count >= 5 || (!betaAttempts.has(key) && betaAttempts.size >= 10000)) {
+      res.status(429).json({ success: false, error: 'too_many_attempts' }); return;
+    }
+    attempts.count++; betaAttempts.set(key, attempts);
+    const code = req.body?.code;
+    if (!c || !repos.beta || now < new Date(c.startsAt) || now >= new Date(c.endsAt)
+      || typeof code !== 'string' || code.length < 24 || code.length > 256
+      || !c.invites.some(i => i.userId === key && i.codeHash === createHash('sha256').update(code).digest('hex'))) {
+      res.status(400).json({ success: false, error: 'invalid_or_expired_beta_code' }); return;
+    }
+    try {
+      await repos.beta.redeem({ tenantId: req.auth!.tenantId, planId: 'test_cohort', status: 'active',
+        currentPeriodEnd: new Date(c.endsAt), cancelAtPeriodEnd: true, providerName: 'operator_comp',
+        providerSubscriptionRef: `beta:${c.id}`, refundedAt: null, lastEventAt: now,
+        lastEventId: `beta:${c.id}`, updatedAt: now });
+      const ent = await repos.entitlements.get(req.auth!.tenantId);
+      if (ent?.providerSubscriptionRef !== `beta:${c.id}` || entitlementStatus(ent, config, new Date()) !== 'active') {
+        res.status(409).json({ success: false, error: 'beta_access_unavailable' }); return;
+      }
+      res.json({ success: true, endsAt: ent.currentPeriodEnd });
+    } catch { res.status(503).json({ success: false, error: 'beta_redemption_unavailable' }); }
   });
 
   // Bid applications: per-tenant drafts with readiness evaluation. Always
@@ -599,9 +590,8 @@ function applyReadyInvariant(app: BidApplication): void {
   };
 
   const guardMiddleware = async (req: Request, res: Response, next: NextFunction) => {
-    if (!config.authRequired) {
-      next();
-      return;
+    if (!config.authRequired && (!req.auth || (await repos.entitlements.get(req.auth.tenantId))?.planId !== 'test_cohort')) {
+      next(); return;
     }
     const rule = GUARDED_ROUTES.find((r) => r.method === req.method && r.path === req.path);
     if (!rule) {
@@ -618,7 +608,13 @@ function applyReadyInvariant(app: BidApplication): void {
     }
     try {
       const decision = await authorizeAndConsume(repos, config, req.auth.tenantId, rule.action);
-      if (decision.allowed) markConsumed(req, rule.action);
+      if (decision.allowed) {
+        markConsumed(req, rule.action, decision.periodKey!);
+        const action = rule.action;
+        res.once('finish', () => {
+          if (res.statusCode >= 400) void releaseConsumption(req, action).catch(() => console.error('[foundation] Failed request allowance release unavailable'));
+        });
+      }
       if (!decision.allowed) {
         const status = decision.reason === 'plan_limit_reached' ? 429 : 402;
         res.status(status).json({ success: false, error: decision.reason, entitlementStatus: decision.status });

@@ -26,6 +26,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   isDarkMode = false
 }) => {
   const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(0);
+  const [analysisError, setAnalysisError] = useState('');
   const [showSamples, setShowSamples] = useState<boolean>(false);
   const [rawText, setRawText] = useState<string>(initialSelectedTender?.rawTextExcerpt || '');
   const [referenceId, setReferenceId] = useState<string>(initialSelectedTender?.referenceNumber || '');
@@ -39,7 +40,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   const [pdfMeta, setPdfMeta] = useState<{ pageCount?: number; title?: string; reference?: string; dept?: string } | null>(null);
   const [activeModel, setActiveModel] = useState<string>('gemma2:latest');
   const [activeProvider, setActiveProvider] = useState<string>('ollama');
-  const [isLocalOnline, setIsLocalOnline] = useState<boolean>(true);
+  const [isLocalOnline, setIsLocalOnline] = useState<boolean>(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState<boolean>(false);
 
   // Check local models on mount
@@ -157,6 +158,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   };
 
   const executePipeline = async () => {
+    setAnalysisError('');
     setIsUploading(true);
     window.dispatchEvent(new CustomEvent('tenderagent:busy', { detail: true }));
     setTraceLogs([]);
@@ -232,31 +234,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         throw new Error(data.error || 'Pipeline execution failed');
       }
     } catch (err: any) {
-      console.warn('[Analyzer Fallback]:', err.message);
-      const preset = SAMPLE_TENDERS[selectedPresetIndex] || SAMPLE_TENDERS[0];
-      setTraceLogs(prev => [
-        ...prev,
-        'Analysis request failed - showing the selected sample tender as a preview instead.',
-      ]);
-      setExtractedData({
-        title: preset.title,
-        dept: preset.issuingDepartment,
-        reference: preset.referenceNumber,
-        points: preset.evaluationCriteria.preferencePointsSystem + ' System',
-        checklist: {
-          csd: preset.extractedComplianceChecklist.csdRequired,
-          sars: preset.extractedComplianceChecklist.sarsPinRequired,
-          bbbee: preset.extractedComplianceChecklist.bbbeeRequired,
-          coida: preset.extractedComplianceChecklist.coidaRequired,
-          cidb: preset.cidbGradingRequired || null,
-          compulsoryBriefing: preset.extractedComplianceChecklist.compulsoryBriefing || false,
-          subcontracting30Percent: preset.extractedComplianceChecklist.subcontracting30Percent || false,
-          additionalDocuments: preset.extractedComplianceChecklist.additionalDocuments || []
-        },
-        estimatedBudget: preset.estimatedBudget,
-        category: preset.category,
-        province: preset.province
-      });
+      setAnalysisError(`Analysis did not complete: ${err.message}. No replacement sample result was generated.`);
+      setExtractedData(null); setActiveSkeleton(null);
     } finally {
       setIsUploading(false);
       window.dispatchEvent(new CustomEvent('tenderagent:busy', { detail: false }));
@@ -310,7 +289,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                 }`}
             >
               <FileCode className="w-3.5 h-3.5" />
-              <span>Bid Skeleton (.docx)</span>
+              <span>Bid Skeleton (.doc)</span>
             </button>
           </div>
         </div>
@@ -338,6 +317,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               Drop the tender PDF or paste its text below. Your checklist appears on this page when the check finishes.
             </p>
 
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Beta testers: use public or synthetic documents only. The free beta uses a rule-based preview, not a language model. Confirm every requirement against the source tender.</p>
             {/* Sample tenders: optional, clearly labeled, collapsed by default */}
             <div className="mb-4">
               <button
@@ -462,8 +442,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
             {isAdmin && (
             <div className={`p-2.5 rounded-lg border mb-4 text-xs ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-1.5">
+              <div className="flex flex-col items-start gap-2 mb-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Terminal className="w-3.5 h-3.5 text-emerald-600" />
                   <span className={`font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                     Active AI Model:
@@ -473,11 +453,11 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   </span>
                   <span className="text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    {isLocalOnline ? 'Local Runner Active' : 'Cloud AI mode'}
+                    {isLocalOnline ? 'Local Runner Active' : 'Local runner not detected'}
                   </span>
                 </div>
                 <div className="text-[10px] font-mono text-slate-500">
-                  Auto-Failover: configured
+                  Provider use depends on account access
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -564,6 +544,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               </div>
             </div>
 
+            {analysisError && <p role="alert" className="mb-3 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">{analysisError}</p>}
             {/* Primary Action Button */}
             <button
               onClick={executePipeline}
@@ -922,7 +903,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               }`}>
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Finished checks are saved to your workspace.</span>
+                <span>This result is response-only. Save a bid draft separately to keep your work.</span>
               </div>
 
               <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -947,7 +928,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
                   className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm shadow-emerald-900/30 flex-1 sm:flex-none"
                 >
                   <FileCode className="w-3.5 h-3.5" />
-                  <span>Download Draft Bid Response Skeleton (.docx)</span>
+                  <span>Download Draft Bid Response Skeleton (.doc)</span>
                 </button>
               </div>
             </div>

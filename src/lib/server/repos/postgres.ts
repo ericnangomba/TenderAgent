@@ -211,6 +211,20 @@ export function createPostgresRepos(pool: PoolLike, tenantConstraintsReady = fal
     accountDeletion: tenantConstraintsReady && typeof (pool as any).connect === 'function' ? {
       erase: (tenantId: string) => erasePostgresTenant(pool as DeletionPool, tenantId),
     } : undefined,
+    beta: {
+      async redeem(e) {
+        // One statement and the entitlement PK arbitrate concurrent redemption.
+        // Never upsert over paid access, revocation or a previous campaign.
+        await pool.query(`INSERT INTO foundation_entitlements
+          (tenant_id,plan_id,status,current_period_end,cancel_at_period_end,provider_name,
+           provider_subscription_ref,refunded_at,last_event_at,last_event_id,updated_at)
+          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+          WHERE EXISTS (SELECT 1 FROM foundation_tenants WHERE id=$1)
+          ON CONFLICT (tenant_id) DO NOTHING`,
+          [e.tenantId,e.planId,e.status,e.currentPeriodEnd,e.cancelAtPeriodEnd,e.providerName,
+           e.providerSubscriptionRef,e.refundedAt,e.lastEventAt,e.lastEventId,e.updatedAt]);
+      },
+    },
     tenants: {
       async create(t: Tenant) {
         await pool.query(

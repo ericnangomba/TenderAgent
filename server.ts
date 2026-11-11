@@ -505,7 +505,8 @@ app.post('/api/analyze', heavyOpLimiter, async (req: Request, res: Response) => 
         if (!companyProfile) profile = stored.profile;
       }
     }
-    const llmConfig = resolveServerLlmConfig(selectedModelId);
+    const isBeta = req.auth && (await foundation.repos.entitlements.get(req.auth.tenantId))?.planId === 'test_cohort';
+    const llmConfig = resolveServerLlmConfig(isBeta ? 'gemma2-local' : selectedModelId);
     const allowCloudLlm = await foundation.cloudLlmAccess(req);
 
     let result;

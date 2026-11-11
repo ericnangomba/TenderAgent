@@ -27,15 +27,15 @@ export const PLANS: Plan[] = [
   },
   {
     // Complimentary tester cohort: granted only by an operator through
-    // /api/admin/test-access, never by a billing webhook. Quota figures are
-    // PROVISIONAL placeholders pending Eric's decision - no grant is active
-    // until he approves cohort access.
+    // account-bound code redemption, never by a billing webhook. Eric approved
+    // a shared seven-day beta with 20 pilot analyses and no paid searches.
+    // Campaign dates and recipients remain unset until separately approved.
     id: 'test_cohort',
-    name: 'Tester cohort (complimentary, provisional limits)',
+    name: 'Beta access (free, 20 analyses per pilot)',
     priceCentsZAR: 0,
     interval: 'monthly',
     includedAnalyses: 20,
-    includedSerpapiLookups: 10,
+    includedSerpapiLookups: 0,
   },
 ];
 
@@ -43,7 +43,17 @@ export function getPlan(planId: string | null | undefined, plans: Plan[] = PLANS
   return plans.find((p) => p.id === planId);
 }
 
+export interface BetaCampaign {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  invites: Array<{ userId: string; codeHash: string }>;
+}
+
 export interface FoundationConfig {
+  /** Inactive unless an operator supplies the approved fixed seven-day window. */
+  betaCampaign?: BetaCampaign;
+
   /** When false (default), guards no-op for accounts, but SerpApi spend is still
    *  restricted to signed-in tenants with an active subscription - Eric's rule
    *  that paid credits are only consumed for paying customers always holds. */
@@ -100,6 +110,17 @@ export interface FoundationConfig {
 
 /** Hard rules that must hold before the server may accept traffic. */
 export function assertSafeConfig(config: FoundationConfig, env: NodeJS.ProcessEnv = process.env): void {
+  if (config.betaCampaign) {
+    const c = config.betaCampaign;
+    const start = Date.parse(c.startsAt), end = Date.parse(c.endsAt);
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(c.id) || !/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(c.startsAt) || !/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(c.endsAt) || !Number.isFinite(start) || end - start !== 7 * 86400000
+      || !Array.isArray(c.invites) || c.invites.length > 100
+      || c.invites.some(i => typeof i.userId !== 'string' || !i.userId || !/^[a-f0-9]{64}$/.test(i.codeHash))
+      || new Set(c.invites.map(i => i.userId)).size !== c.invites.length
+      || new Set(c.invites.map(i => i.codeHash)).size !== c.invites.length) {
+      throw new Error('Invalid beta campaign: require one fixed seven-day window and unique account-bound invite hashes.');
+    }
+  }
   if (env.NODE_ENV === 'production' && config.accountDeletionEnabled) {
     throw new Error('Production account deletion is unavailable until durable restore reconciliation is implemented and reviewed.');
   }
@@ -127,6 +148,7 @@ export function assertSafeConfig(config: FoundationConfig, env: NodeJS.ProcessEn
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): FoundationConfig {
   return {
+    betaCampaign: env.BETA_CAMPAIGN_JSON ? JSON.parse(env.BETA_CAMPAIGN_JSON) : undefined,
     authRequired: env.AUTH_REQUIRED === 'true',
     accountDeletionEnabled: env.ACCOUNT_DELETION_ENABLED === 'true',
     plans: PLANS,

@@ -154,6 +154,7 @@ export function createAuthRouter(repos: FoundationRepos, config: FoundationConfi
   const accountLimiter = createRateLimiter(config.authRateLimit.maxAttempts, config.authRateLimit.windowMs);
 
   router.use((req: Request, res: Response, next) => {
+    if (!req.path.startsWith('/auth/')) { next(); return; }
     if (!ipLimiter.allow(`${req.ip}:${req.path}`)) {
       res.status(429).json({ success: false, error: 'too_many_attempts' });
       return;
