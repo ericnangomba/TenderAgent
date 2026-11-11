@@ -20,8 +20,8 @@ export const Settings: React.FC<SettingsProps> = ({ isDarkMode }) => {
       </section>
       <section className={card}>
         <h3 className="text-sm font-semibold flex items-center gap-2"><Database className="w-4 h-4" />Retention and deletion</h3>
-        <p className="text-sm leading-relaxed">Analyses remain in server memory while the service runs and disappear on restart, not on tab close or logout. Saved profiles and bid drafts, including evidence notes, have no automatic expiry.</p>
-        <p className="text-sm">Delete your saved profile from Account and individual drafts from Bid Readiness. Those actions do not delete your account, sessions, usage or billing records. This page does not clear server data or configure backup retention.</p>
+        <p className="text-sm leading-relaxed">Analysis results are returned to the current browser view without saved server-side history. Leaving or reloading the view loses the result. Saved profiles and bid drafts, including evidence notes, have no automatic expiry.</p>
+        <p className="text-sm">Delete your saved profile from Account and individual drafts from Bid Readiness. Those individual actions do not delete your account. Whole-account deletion is not currently available on the hosted service. It stays disabled until safe backup-restore handling is implemented and reviewed. This page does not clear server data or configure backup retention.</p>
       </section>
     </div>
   );

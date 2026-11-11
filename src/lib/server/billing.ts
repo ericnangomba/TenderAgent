@@ -76,7 +76,14 @@ export function createWebhookRouter(providers: BillingProvider[], repos: Foundat
         res.status(401).json({ success: false, error: 'invalid_signature_or_payload' });
         return;
       }
-      const result = await applyBillingEvent(repos, evt);
+      let result;
+      try { result = await applyBillingEvent(repos, evt); }
+      catch {
+        if (!await repos.tenants.getById(evt.tenantId)) {
+          res.json({ success: true, applied: false, reason: 'tenant_missing' }); return;
+        }
+        res.status(503).json({ success: false, error: 'billing_event_failed' }); return;
+      }
       // Always 200 on a verified event - duplicates and stale events are safe,
       // and providers retry on non-2xx.
       res.json({ success: true, applied: result.applied, reason: result.reason });

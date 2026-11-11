@@ -39,7 +39,7 @@ export function effectiveStatus(ent: Entitlement | null, now: Date, graceDays: n
 
 export interface ApplyResult {
   applied: boolean;
-  reason?: 'duplicate' | 'stale';
+  reason?: 'duplicate' | 'stale' | 'tenant_missing';
   entitlement: Entitlement;
 }
 
@@ -52,6 +52,7 @@ export async function applyBillingEvent(
   evt: NormalizedBillingEvent,
   now: Date = new Date(),
 ): Promise<ApplyResult> {
+  if (!await repos.tenants.getById(evt.tenantId)) return { applied: false, reason: 'tenant_missing', entitlement: emptyEntitlement(evt.tenantId) };
   if (await repos.billingEvents.has(evt.eventId)) {
     const current = (await repos.entitlements.get(evt.tenantId)) || emptyEntitlement(evt.tenantId);
     return { applied: false, reason: 'duplicate', entitlement: current };

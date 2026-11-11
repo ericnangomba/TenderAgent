@@ -9,6 +9,7 @@
  * the same guarantee the memory driver gets from the single-threaded loop.
  */
 import { Pool } from 'pg';
+import { AccountDeletionError } from '../accountLifecycle';
 import type {
   FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile,
 } from './types';
@@ -98,7 +99,7 @@ export async function ensurePostgresSchema(pool: PoolLike): Promise<void> {
  *  publicly trusted certs, so the system CA store is enough. PGSSL=disable is
  *  the explicit escape hatch for a local dev database without TLS; never set
  *  it for a networked database. */
-export async function connectPostgres(uri: string): Promise<Pool> {
+export async function connectPostgres(uri: string, enableDeletionConstraints = false): Promise<Pool> {
   // Verified live against Neon (pg 8.23.1, PostgreSQL 18.6): the console
   // connection string (sslmode=require&channel_binding=require) connects as-is
   // - pg ignores channel_binding rather than failing. The explicit ssl option
@@ -111,11 +112,68 @@ export async function connectPostgres(uri: string): Promise<Pool> {
   const pool = new Pool({ connectionString: uri, max: 5, ssl, connectionTimeoutMillis: 15000 });
   try {
     await ensurePostgresSchema(pool);
+    if (enableDeletionConstraints) await ensureTenantForeignKeys(pool);
     return pool;
   } catch {
     try { await pool.end(); } catch { /* preserve the sanitized error */ }
     throw new Error('Postgres initialization failed. Check database connectivity and schema permissions privately.');
   }
+}
+
+/** Existing orphan rows cause startup to fail closed, never automatic deletion.
+ * Foreign-key row locks serialize every insert/update with tenant erasure,
+ * including late webhook/usage writes, across processes. */
+export async function ensureTenantForeignKeys(pool: PoolLike): Promise<void> {
+  for (const table of ['users','sessions','entitlements','billing_events','usage_counters','profiles','applications']) {
+    const name = `foundation_${table}_tenant_live`;
+    await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${name}' AND conrelid = 'foundation_${table}'::regclass) THEN
+        ALTER TABLE foundation_${table} ADD CONSTRAINT ${name}
+        FOREIGN KEY (tenant_id) REFERENCES foundation_tenants(id) ON DELETE CASCADE;
+      END IF;
+    END $$`);
+  }
+}
+
+interface DeletionClient extends PoolLike { release(error?: boolean): void; }
+interface DeletionPool extends PoolLike { connect(): Promise<DeletionClient>; }
+
+export async function erasePostgresTenant(pool: DeletionPool, tenantId: string): Promise<void> {
+  const client = await pool.connect();
+  let committing = false;
+  let discard = false;
+  let released = false;
+  try {
+    await client.query('BEGIN');
+    await client.query("SET LOCAL lock_timeout = '10s'");
+    await client.query("SET LOCAL statement_timeout = '30s'");
+    const tenant = await client.query('SELECT id FROM foundation_tenants WHERE id=$1 FOR UPDATE', [tenantId]);
+    if (!tenant.rows.length) { await client.query('ROLLBACK'); return; }
+    await client.query('SELECT tenant_id FROM foundation_entitlements WHERE tenant_id=$1 FOR UPDATE', [tenantId]);
+    const external = await client.query(`SELECT 1 FROM foundation_entitlements WHERE tenant_id=$1
+      AND ((provider_name IS NOT NULL AND provider_name NOT IN ('mock','operator_comp')) OR (provider_name IS NULL AND provider_subscription_ref IS NOT NULL))
+      UNION ALL SELECT 1 FROM foundation_billing_events WHERE tenant_id=$1 AND provider NOT IN ('mock','operator_comp')`, [tenantId]);
+    if (external.rows.length) throw new AccountDeletionError('billing_resolution_required');
+    // FK ON DELETE CASCADE covers every foundation table and prevents resurrection.
+    await client.query('DELETE FROM foundation_tenants WHERE id=$1', [tenantId]);
+    committing = true;
+    await client.query('COMMIT');
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { discard = true; }
+    if (committing) {
+      discard = true;
+      // Discard before acquiring a separate connection, including on max=1 pools.
+      client.release(true); released = true;
+      // Verify with a separate connection. If gone, the transaction committed.
+      try {
+        const check = await pool.query('SELECT id FROM foundation_tenants WHERE id=$1', [tenantId]);
+        if (!check.rows.length) return;
+      } catch { /* unconfirmed, do not claim success or silently retry */ }
+      throw new AccountDeletionError('deletion_outcome_unconfirmed', 503);
+    }
+    if (e instanceof AccountDeletionError) throw e;
+    throw new AccountDeletionError('account_deletion_failed', 503);
+  } finally { if (!released) client.release(discard); }
 }
 
 const USAGE_COLUMN: Record<'analyses' | 'serpapiLookups', string> = {
@@ -148,8 +206,11 @@ function toApplication(row: any): BidApplication {
   };
 }
 
-export function createPostgresRepos(pool: PoolLike): FoundationRepos {
+export function createPostgresRepos(pool: PoolLike, tenantConstraintsReady = false): FoundationRepos {
   return {
+    accountDeletion: tenantConstraintsReady && typeof (pool as any).connect === 'function' ? {
+      erase: (tenantId: string) => erasePostgresTenant(pool as DeletionPool, tenantId),
+    } : undefined,
     tenants: {
       async create(t: Tenant) {
         await pool.query(

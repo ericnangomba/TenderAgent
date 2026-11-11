@@ -8,8 +8,10 @@ import { loadConfig, assertSafeConfig } from '../src/lib/server/config';
 const T0 = '2026-11-10T10:00:00Z';
 
 test('equal-timestamp events resolve deterministically regardless of arrival order', async () => {
-  const mk = (order: string[]) => {
+  const mk = async (order: string[]) => {
     const repos = createMemoryRepos();
+    await repos.tenants.create({ id: 't1', companyName: 'Fixture', createdAt: new Date() });
+    await repos.tenants.create({ id: 't2', companyName: 'Fixture', createdAt: new Date() });
     return { repos, order };
   };
   const events = {
@@ -17,12 +19,12 @@ test('equal-timestamp events resolve deterministically regardless of arrival ord
     b: { eventId: 'evt-b', provider: 'mock', type: 'subscription.cancelled' as const, tenantId: 't1', occurredAt: new Date(T0) },
   };
   // Arrival order 1: activate then cancel-at-same-instant -> cancel wins (evt-b > evt-a)
-  const r1 = mk(['a', 'b']);
+  const r1 = await mk(['a', 'b']);
   await applyBillingEvent(r1.repos, events.a);
   await applyBillingEvent(r1.repos, events.b);
   // Arrival order 2: cancel first, then the activation arrives - it is the
   // EARLIER event id at the same timestamp and must not reopen the account.
-  const r2 = mk(['b', 'a']);
+  const r2 = await mk(['b', 'a']);
   await applyBillingEvent(r2.repos, events.b);
   await applyBillingEvent(r2.repos, events.a);
   const e1 = await r1.repos.entitlements.get('t1');
@@ -33,6 +35,8 @@ test('equal-timestamp events resolve deterministically regardless of arrival ord
 
 test('activation without periodEnd defaults to one monthly interval and expires', async () => {
   const repos = createMemoryRepos();
+    await repos.tenants.create({ id: 't1', companyName: 'Fixture', createdAt: new Date() });
+    await repos.tenants.create({ id: 't2', companyName: 'Fixture', createdAt: new Date() });
   const { entitlement } = await applyBillingEvent(repos, {
     eventId: 'evt-nopend', provider: 'mock', type: 'subscription.activated',
     tenantId: 't2', planId: 'standard_monthly', occurredAt: new Date(T0),

@@ -25,6 +25,8 @@ function evt(partial: Partial<NormalizedBillingEvent>): NormalizedBillingEvent {
 
 test('activation grants access within plan limits', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   const config = testConfig();
   await applyBillingEvent(repos, evt({}), NOW);
   const decision = await checkAccess(repos, config, T, 'analysis', NOW);
@@ -34,6 +36,8 @@ test('activation grants access within plan limits', async () => {
 
 test('no subscription blocks access with no_subscription', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   const decision = await checkAccess(repos, testConfig(), T, 'analysis', NOW);
   assert.equal(decision.allowed, false);
   assert.equal(decision.reason, 'no_subscription');
@@ -41,6 +45,8 @@ test('no subscription blocks access with no_subscription', async () => {
 
 test('duplicate event is idempotent', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   const e = evt({ eventId: 'evt-dup-1' });
   const first = await applyBillingEvent(repos, e, NOW);
   const second = await applyBillingEvent(repos, e, NOW);
@@ -51,6 +57,8 @@ test('duplicate event is idempotent', async () => {
 
 test('out-of-order older event is recorded but does not move state back', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   await applyBillingEvent(repos, evt({ eventId: 'evt-new', type: 'subscription.activated', occurredAt: new Date('2026-11-10T12:00:00Z') }), NOW);
   const stale = await applyBillingEvent(repos, evt({ eventId: 'evt-old', type: 'subscription.payment_failed', occurredAt: new Date('2026-11-10T08:00:00Z') }), NOW);
   assert.equal(stale.applied, false);
@@ -61,6 +69,8 @@ test('out-of-order older event is recorded but does not move state back', async 
 
 test('payment_failed then renewal restores access', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   const config = testConfig();
   await applyBillingEvent(repos, evt({ eventId: 'e1' }), NOW);
   await applyBillingEvent(repos, evt({ eventId: 'e2', type: 'subscription.payment_failed', occurredAt: new Date('2026-11-11T10:00:00Z') }), NOW);
@@ -74,6 +84,8 @@ test('payment_failed then renewal restores access', async () => {
 
 test('cancellation at period end: access continues until paid-up period ends', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   await applyBillingEvent(repos, evt({ eventId: 'c1' }), NOW);
   await applyBillingEvent(repos, evt({ eventId: 'c2', type: 'subscription.cancellation_scheduled', occurredAt: new Date('2026-11-15T10:00:00Z') }), NOW);
   // Still inside paid period
@@ -84,6 +96,8 @@ test('cancellation at period end: access continues until paid-up period ends', a
 
 test('missed renewal: past_due during grace, cancelled after', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   await applyBillingEvent(repos, evt({ eventId: 'g1' }), NOW);
   const ent = await repos.entitlements.get(T);
   assert.equal(effectiveStatus(ent, new Date('2026-12-12T10:00:00Z'), 3), 'past_due');
@@ -92,6 +106,8 @@ test('missed renewal: past_due during grace, cancelled after', async () => {
 
 test('refund cancels immediately and records refund time', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   await applyBillingEvent(repos, evt({ eventId: 'r1' }), NOW);
   const refunded = await applyBillingEvent(repos, evt({ eventId: 'r2', type: 'subscription.refunded', occurredAt: new Date('2026-11-20T10:00:00Z') }), NOW);
   assert.equal(refunded.applied, true);
@@ -102,6 +118,8 @@ test('refund cancels immediately and records refund time', async () => {
 
 test('usage limits: allowed up to the plan allowance, then blocked', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'tenant-1', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   const config = testConfig();
   await applyBillingEvent(repos, evt({ eventId: 'u1' }), NOW);
   const planLimit = 60; // standard_monthly provisional allowance

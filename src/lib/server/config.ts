@@ -48,6 +48,8 @@ export interface FoundationConfig {
    *  restricted to signed-in tenants with an active subscription - Eric's rule
    *  that paid credits are only consumed for paying customers always holds. */
   authRequired: boolean;
+  /** OFF until durable deletion/restore reconciliation is implemented and reviewed. */
+  accountDeletionEnabled: boolean;
   /** Plan catalog, config-only and provisional. Not exposed as a public offer. */
   plans: Plan[];
   /** Brute-force throttle for auth endpoints. */
@@ -98,6 +100,9 @@ export interface FoundationConfig {
 
 /** Hard rules that must hold before the server may accept traffic. */
 export function assertSafeConfig(config: FoundationConfig, env: NodeJS.ProcessEnv = process.env): void {
+  if (env.NODE_ENV === 'production' && config.accountDeletionEnabled) {
+    throw new Error('Production account deletion is unavailable until durable restore reconciliation is implemented and reviewed.');
+  }
   if (env.NODE_ENV === 'production' && config.store === 'memory' && env.ALLOW_MEMORY_STORE_IN_PRODUCTION !== 'true') {
     throw new Error(
       'Refusing to boot in production with the in-memory store: accounts, entitlements and usage ' +
@@ -123,6 +128,7 @@ export function assertSafeConfig(config: FoundationConfig, env: NodeJS.ProcessEn
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): FoundationConfig {
   return {
     authRequired: env.AUTH_REQUIRED === 'true',
+    accountDeletionEnabled: env.ACCOUNT_DELETION_ENABLED === 'true',
     plans: PLANS,
     authRateLimit: { maxAttempts: Number(env.AUTH_RATE_LIMIT_MAX || 10), windowMs: Number(env.AUTH_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000) },
     sessionTtlHours: Number(env.SESSION_TTL_HOURS || 24 * 7),

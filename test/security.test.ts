@@ -195,7 +195,9 @@ test('tenders: anonymous and other tenants never see tenant-tagged records', asy
   const bList = JSON.stringify(await (await fetch(`${demo.baseUrl}/api/tenders`, { headers: { cookie: b.cookie } })).json());
   assert.ok(!bList.includes('ZXQMARK'), 'other tenant list leaked record');
   const aList = JSON.stringify(await (await fetch(`${demo.baseUrl}/api/tenders`, { headers: { cookie: a.cookie } })).json());
-  assert.ok(aList.includes('ZXQMARK'), 'own record missing');
+  assert.ok(!aList.includes('ZXQMARK'), 'analysis must not remain in own server-side history');
+  const returned = await analyze.json();
+  assert.ok(JSON.stringify(returned).includes('ZXQMARK'), 'current response still contains the analysis result');
 });
 
 test('finetune endpoints are operator-only in every mode', async () => {

@@ -2,6 +2,7 @@
 import type {
   FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile,
 } from './types';
+import { AccountDeletionError, hasExternalBilling } from '../accountLifecycle';
 import type { BidApplication } from '../readiness';
 
 export function createMemoryRepos(): FoundationRepos {
@@ -11,14 +12,30 @@ export function createMemoryRepos(): FoundationRepos {
   const sessionsById = new Map<string, Session>();
   const sessionsByToken = new Map<string, Session>();
   const entitlements = new Map<string, Entitlement>();
-  const billingEventIds = new Set<string>();
+  const billingEventIds = new Map<string, BillingEventRecord>();
   const usage = new Map<string, UsageCounter>();
   const profiles = new Map<string, TenantProfile>();
   const applications = new Map<string, BidApplication>();
 
   const clone = <T>(v: T): T => structuredClone(v);
 
-  return {
+  const repos: FoundationRepos = {
+    accountDeletion: {
+      async erase(tenantId) {
+        if (!tenants.has(tenantId)) return;
+        if (hasExternalBilling(entitlements.get(tenantId)?.providerName, entitlements.get(tenantId)?.providerSubscriptionRef)
+          || [...billingEventIds.values()].some(e => e.tenantId === tenantId && hasExternalBilling(e.provider))) {
+          throw new AccountDeletionError('billing_resolution_required');
+        }
+        // Synchronous block: no partially erased state can interleave.
+        for (const [id, u] of usersById) if (u.tenantId === tenantId) { usersById.delete(id); usersByEmail.delete(u.email.toLowerCase()); }
+        for (const [id, v] of sessionsById) if (v.tenantId === tenantId) { sessionsById.delete(id); sessionsByToken.delete(v.tokenHash); }
+        for (const [id, v] of applications) if (v.tenantId === tenantId) applications.delete(id);
+        for (const [id, v] of usage) if (v.tenantId === tenantId) usage.delete(id);
+        for (const [id, v] of billingEventIds) if (v.tenantId === tenantId) billingEventIds.delete(id);
+        profiles.delete(tenantId); entitlements.delete(tenantId); tenants.delete(tenantId);
+      },
+    },
     tenants: {
       async create(t) { tenants.set(t.id, clone(t)); },
       async getById(id) { const t = tenants.get(id); return t ? clone(t) : null; },
@@ -47,7 +64,7 @@ export function createMemoryRepos(): FoundationRepos {
     },
     billingEvents: {
       async has(eventId) { return billingEventIds.has(eventId); },
-      async record(e) { billingEventIds.add(e.eventId); },
+      async record(e) { billingEventIds.set(e.eventId, clone(e)); },
     },
     usage: {
       async get(tenantId, periodKey) {
@@ -113,4 +130,16 @@ export function createMemoryRepos(): FoundationRepos {
       },
     },
   };
+  const guard = (group: any, name: string, tenant: (...a: any[]) => string) => {
+    const original = group[name];
+    group[name] = async (...args: any[]) => {
+      if (!tenants.has(tenant(...args))) throw new AccountDeletionError('tenant_not_found', 404);
+      return original.apply(group, args);
+    };
+  };
+  for (const [group, name] of [['users','create'], ['sessions','create'], ['entitlements','put'], ['billingEvents','record'], ['profiles','put'], ['applications','create'], ['applications','put']]) {
+    guard((repos as any)[group], name, a => a.tenantId);
+  }
+  for (const name of ['increment','tryConsume','release']) guard(repos.usage, name, a => a);
+  return repos;
 }

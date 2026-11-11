@@ -1,4 +1,6 @@
-# TenderAgent Paid-Service Foundation (branch: foundation/accounts-tenancy-entitlement)
+# TenderAgent Paid-Service Foundation (historical implementation notes)
+
+> This records earlier increments and contains superseded status notes and provisional plan examples, not current pricing or retention policy. For current lifecycle gaps and release limits see [DATA_LIFECYCLE.md](DATA_LIFECYCLE.md).
 
 ## What this branch adds
 

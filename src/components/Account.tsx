@@ -9,6 +9,7 @@ interface AccountProps {
 }
 
 interface AccountInfo {
+  accountDeletionAvailable?: boolean;
   entitlement?: { effectiveStatus?: string; planId?: string | null; currentPeriodEnd?: string | null };
   usage?: { analyses: number; serpapiLookups: number };
   allowances?: { includedAnalyses: number; includedSerpapiLookups: number } | null;
@@ -20,6 +21,11 @@ interface AccountInfo {
  */
 export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange }) => {
   const [info, setInfo] = useState<AccountInfo | null>(null);
+  const [accountDeleteOpen, setAccountDeleteOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [accountDeleteError, setAccountDeleteError] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [profileDelete, setProfileDelete] = useState<'idle' | 'confirm' | 'busy' | 'done' | 'error'>('idle');
 
@@ -67,6 +73,31 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
     }
     onAuthChange(null);
     window.location.reload();
+  };
+
+  const deleteAccount = async () => {
+    setDeleteBusy(true); setAccountDeleteError(null);
+    try {
+      const res = await fetch('/api/account', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: deletePassword, confirmation: deleteConfirmation }) });
+      setDeletePassword('');
+      const data = await res.json();
+      if (!res.ok) {
+        const messages: Record<string, string> = {
+          reauthentication_failed: 'Password not accepted. Nothing was deleted.',
+          billing_resolution_required: 'This account has external billing records. Resolve cancellation and record handling with support before deleting. Nothing was deleted.',
+          too_many_attempts: 'Too many attempts. Wait ten minutes and try again.',
+          deletion_outcome_unconfirmed: 'Deletion status could not be confirmed. Do not repeat it yet; ask support to check the account.',
+        };
+        setAccountDeleteError(messages[data.error] || 'Account deletion did not finish. Check your connection and account status before retrying.');
+        return;
+      }
+      try {
+        navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_CACHES' });
+        if ('caches' in window) await Promise.all((await caches.keys()).filter(k => k.startsWith('tenderagent-')).map(k => caches.delete(k)));
+      } catch { /* reload clears in-memory page state */ }
+      onAuthChange(null); window.location.reload();
+    } catch { setDeletePassword(''); setAccountDeleteError('Deletion status could not be confirmed. Check your connection and account status before retrying.'); }
+    finally { setDeleteBusy(false); }
   };
 
   const deleteProfile = async () => {
@@ -177,8 +208,7 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
         </div>
         <p className={`text-xs leading-relaxed mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
           Your company profile and bid drafts stay saved until you delete them - there is no automatic expiry.
-          Tender analyses and pasted tender text run in server memory while the service runs and disappear when the
-          service restarts. Evidence notes you add to a requirement stay saved with that draft until you delete the
+          Tender analyses are returned to this browser view without a saved server-side analysis history. Leaving or reloading the view loses that result. Evidence notes you add to a requirement stay saved with that draft until you delete the
           draft. Bid drafts can be deleted one by one from the Bid Readiness view.
         </p>
         {profileDelete === 'done' ? (
@@ -221,6 +251,20 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           </div>
         )}
       </div>
+      {info?.accountDeletionAvailable && (
+        <div className={card}>
+          <h3 className={`text-sm font-bold uppercase mb-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Delete account</h3>
+          <p className={`text-xs leading-relaxed mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Deletes your sign-in, all sessions, saved company profile, all bid drafts and evidence notes, saved training examples/jobs, and app usage/test-access records. This cannot be undone. It does not recall exports or erase provider recovery copies immediately. External billing records must be resolved first.</p>
+          {!accountDeleteOpen ? <button className="text-xs px-3 py-2 rounded-lg bg-red-600 text-white" onClick={() => setAccountDeleteOpen(true)}>Delete my account</button> : (
+            <form onSubmit={e => { e.preventDefault(); void deleteAccount(); }} className="space-y-3">
+              <label className="block text-xs">Current password<input type="password" autoComplete="current-password" required value={deletePassword} onChange={e => setDeletePassword(e.target.value)} className="block w-full mt-1 p-2 rounded border bg-white text-slate-900" /></label>
+              <label className="block text-xs">Type DELETE MY ACCOUNT<input required value={deleteConfirmation} onChange={e => setDeleteConfirmation(e.target.value)} className="block w-full mt-1 p-2 rounded border bg-white text-slate-900" /></label>
+              <div className="flex gap-3"><button type="submit" disabled={deleteBusy || deleteConfirmation !== 'DELETE MY ACCOUNT'} className="text-xs px-3 py-2 rounded-lg bg-red-600 disabled:opacity-50 text-white">{deleteBusy ? 'Deleting...' : 'Permanently delete account'}</button><button type="button" disabled={deleteBusy} className="text-xs px-3 py-2 rounded-lg border" onClick={() => { setAccountDeleteOpen(false); setDeletePassword(''); setDeleteConfirmation(''); setAccountDeleteError(null); }}>Cancel</button></div>
+            </form>
+          )}
+          {accountDeleteError && <p role="alert" className="text-xs mt-3 text-amber-600">{accountDeleteError}</p>}
+        </div>
+      )}
     </div>
   );
 };

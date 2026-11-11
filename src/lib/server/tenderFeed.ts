@@ -35,10 +35,12 @@ export function registerTenderFeedRoutes(app: Express, deps: TenderFeedDeps): vo
       const result = await fetchSouthAfricanTenders(undefined, 'Western Cape', { allowSerpApi });
       if (!result.serpApiConsumed) await foundation.releaseConsumption(req, 'serpapi');
 
+      if (res.destroyed || !await foundation.repos.tenants.getById(req.auth!.tenantId)) return;
       // Register discovered items into the store, tagged to THIS tenant.
       result.leads.forEach(l => {
-        if (!store.has(l.referenceNumber)) {
-          store.set(l.referenceNumber, {
+        const key = JSON.stringify([req.auth!.tenantId, l.referenceNumber]);
+        if (!store.has(key)) {
+          store.set(key, {
             tenantId: req.auth!.tenantId,
             title: l.title,
             referenceNumber: l.referenceNumber,

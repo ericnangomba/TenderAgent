@@ -14,7 +14,7 @@ import { encryptProfileFields, decryptProfileFields, profileForClient, preparePr
 export const TEST_SECRET = 'test-webhook-secret';
 
 export function testConfig(overrides: Partial<FoundationConfig> = {}): FoundationConfig {
-  return { ...loadConfig({}), authRequired: true, mockBillingSecret: TEST_SECRET, ...overrides };
+  return { ...loadConfig({}), authRequired: true, accountDeletionEnabled: true, mockBillingSecret: TEST_SECRET, ...overrides };
 }
 
 export interface TestApp {
@@ -25,10 +25,10 @@ export interface TestApp {
   tenderStore: Map<string, any>;
 }
 
-export async function startTestApp(configOverrides: Partial<FoundationConfig> = {}): Promise<TestApp> {
+export async function startTestApp(configOverrides: Partial<FoundationConfig> = {}, eraseEphemeral?: (tenantId: string) => void, requestLeaseMs?: number): Promise<TestApp> {
   const config = testConfig(configOverrides);
   const repos = createMemoryRepos();
-  const foundation = createFoundation({ config, repos, providers: [new MockBillingProvider(TEST_SECRET)] });
+  const foundation = createFoundation({ config, repos, providers: [new MockBillingProvider(TEST_SECRET)], eraseEphemeral, requestLeaseMs });
 
   const app = express();
   app.use('/api/billing/webhook', foundation.webhookRouter);
@@ -36,6 +36,7 @@ export async function startTestApp(configOverrides: Partial<FoundationConfig> = 
   app.use(foundation.originCheckMiddleware);
 app.use('/api', foundation.apiCacheHeaders);
   app.use(foundation.sessionMiddleware);
+  app.use(foundation.tenantWorkMiddleware);
   app.use(foundation.guardMiddleware);
   app.use('/api', foundation.router);
   app.use('/api/admin', foundation.adminRouter);

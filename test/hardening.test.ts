@@ -165,6 +165,8 @@ test('concurrent analyze requests never overspend the allowance', async () => {
 
 test('webhook: re-applying the same event twice leaves identical state (crash recovery)', async () => {
   const repos = createMemoryRepos();
+  await repos.tenants.create({ id: 'crash-t', companyName: 'Synthetic fixture', createdAt: new Date() });
+
   const config = testConfig();
   const evt = {
     eventId: 'evt-crash-1', provider: 'mock', type: 'subscription.activated' as const,

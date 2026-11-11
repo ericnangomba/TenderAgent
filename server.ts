@@ -12,6 +12,9 @@ import { extractTextFromPdf, isRawPdfString, parseRawPdfString } from './src/lib
 import { detectLocalModels } from './src/lib/services/localModelDetector';
 import { SAMPLE_TENDERS } from './src/lib/data/sampleTenders';
 import { registerTenderFeedRoutes } from './src/lib/server/tenderFeed';
+import { registerGeneratedDatasetRoute } from './src/lib/server/generatedDatasets';
+import { registerSimulatedTrainingRoute } from './src/lib/server/simulatedTraining';
+import { eraseTenantEphemeral } from './src/lib/server/ephemeralErasure';
 import { IUserProfile, IPlatformModel, IFineTuningDataset, IFineTuningJob } from './src/lib/types/tender';
 
 dotenv.config();
@@ -23,7 +26,11 @@ const foundationConfig = loadConfig();
 // Fail closed before opening any store connection (e.g. STORE=postgres
 // without DATABASE_URL must never attempt a localhost connection).
 assertSafeConfig(foundationConfig);
-const foundation = createFoundation({ config: foundationConfig, repos: await createStoreRepos(foundationConfig) });
+const foundation = createFoundation({ config: foundationConfig, repos: await createStoreRepos(foundationConfig),
+  eraseEphemeral: (tenantId) => eraseTenantEphemeral(tenantId, {
+    tenders: inMemoryTenderStore, datasets: inMemoryDatasets, jobs: inMemoryJobs, timers: simulatedJobTimers,
+  }),
+});
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,6 +87,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(foundation.originCheckMiddleware);
 app.use('/api', foundation.apiCacheHeaders);
 app.use(foundation.sessionMiddleware);
+app.use(foundation.tenantWorkMiddleware);
 app.use(foundation.guardMiddleware);
 app.use('/api', foundation.router);
 // Operator surface: read-only aggregate admin endpoints (requireAdmin enforced inside).
@@ -514,12 +522,6 @@ app.post('/api/analyze', heavyOpLimiter, async (req: Request, res: Response) => 
       throw pipelineErr;
     }
 
-    if (req.auth && result.record) {
-      result.record.tenantId = req.auth.tenantId;
-      if (result.record.referenceNumber) {
-        inMemoryTenderStore.set(result.record.referenceNumber, result.record);
-      }
-    }
 
     res.json({
       success: true,
@@ -567,55 +569,7 @@ app.post('/api/finetune/datasets', foundation.requireAdmin, (req: Request, res: 
   }
 });
 
-// Auto-synthesize dataset pairs from active tenders
-app.post('/api/finetune/datasets/generate-from-tenders', foundation.requireAdmin, (req: Request, res: Response) => {
-  try {
-    // Only this tenant's own records plus the public sample feed.
-    const tenders = Array.from(inMemoryTenderStore.values())
-      .filter((t: any) => !t.tenantId || t.tenantId === req.auth!.tenantId);
-    const generatedExamples = tenders.map((t, idx) => ({
-      id: `gen-ex-${idx + 1}-${Date.now().toString().slice(-4)}`,
-      domain: (t.province?.includes('Western Cape') ? 'Western Cape SCM' : (t.cidbGradingRequired ? 'CIDB Act' : 'PPPFA 2022')) as any,
-      prompt: `Audit South African procurement document "${t.title}" (Ref: ${t.referenceNumber}) issued by ${t.issuingDepartment}. Extract mandatory statutory eligibility, CIDB grading, and preference points system.`,
-      completion: JSON.stringify({
-        title: t.title,
-        referenceNumber: t.referenceNumber,
-        issuingDepartment: t.issuingDepartment,
-        province: t.province,
-        closingDate: t.closingDate,
-        pointsSystem: t.evaluationCriteria?.preferencePointsSystem || '80/20',
-        cidbGrading: t.cidbGradingRequired || null,
-        mandatoryEligibility: {
-          csdMaAA: t.extractedComplianceChecklist?.csdRequired ?? true,
-          sarsTcsPin: t.extractedComplianceChecklist?.sarsPinRequired ?? true,
-          bbbeeStatus: t.extractedComplianceChecklist?.bbbeeRequired ?? true,
-          coidaGoodStanding: t.extractedComplianceChecklist?.coidaRequired ?? false,
-          compulsoryBriefing: t.extractedComplianceChecklist?.compulsoryBriefing ?? false,
-          designatedSubcontracting30Percent: t.extractedComplianceChecklist?.subcontracting30Percent ?? false
-        },
-        returnableSchedules: t.extractedComplianceChecklist?.additionalDocuments || ['SBD 1', 'SBD 4', 'SBD 6.1']
-      }, null, 2),
-      referenceRfp: t.referenceNumber,
-      createdAt: new Date().toISOString()
-    }));
-
-    // Find or create active dataset
-    let ds = inMemoryDatasets.find(d => d.id === 'dataset-sa-procure-v1');
-    if (ds) {
-      ds.examples = [...generatedExamples, ...ds.examples];
-      ds.exampleCount = ds.examples.length;
-      ds.tokenCountEst = ds.examples.length * 1400;
-    }
-
-    res.json({
-      success: true,
-      generatedCount: generatedExamples.length,
-      dataset: ds
-    });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+registerGeneratedDatasetRoute(app, { foundation, store: inMemoryTenderStore, datasets: inMemoryDatasets });
 
 // Fine-Tuning Jobs. Sample jobs are public read; a tenant's jobs are private.
 app.get('/api/finetune/jobs', foundation.requireAdmin, (req: Request, res: Response) => {
@@ -626,78 +580,8 @@ app.get('/api/finetune/jobs', foundation.requireAdmin, (req: Request, res: Respo
 // Start Fine-Tuning Pipeline. NOTE: this is a SIMULATED training run for the
 // studio preview - it performs no GPU execution and produces no adapter
 // artifact. Real training runs from the exported Python script.
-app.post('/api/finetune/start', foundation.requireAdmin, (req: Request, res: Response) => {
-  try {
-    const { baseModel, datasetId, loraRank, loraAlpha, epochs, learningRate } = req.body;
-    const dataset = inMemoryDatasets.find(d => d.id === datasetId && (!d.tenantId || d.tenantId === req.auth!.tenantId)) || inMemoryDatasets[0];
-    
-    const jobId = `ft-job-${Date.now().toString().slice(-5)}`;
-    const outputName = `${baseModel.includes('llama') ? 'Llama 3.1 8B' : 'Gemma 2 9B'} - SA Procurement LoRA (Job ${jobId})`;
-
-    const newJob: IFineTuningJob = {
-      tenantId: req.auth!.tenantId,
-      simulated: true,
-      id: jobId,
-      jobName: `job-${jobId}`,
-      baseModel: baseModel || 'meta-llama/Meta-Llama-3.1-8B-Instruct',
-      datasetId: dataset.id,
-      datasetName: dataset.name,
-      status: 'training',
-      progress: 5,
-      currentEpoch: 1,
-      totalEpochs: Number(epochs) || 3,
-      currentStep: 2,
-      totalSteps: (Number(epochs) || 3) * 20,
-      currentLoss: 2.38,
-      learningRate: Number(learningRate) || 0.0002,
-      vramUsageGb: 7.6,
-      etaSeconds: 120,
-      lossHistory: [
-        { step: 1, loss: 2.62 },
-        { step: 2, loss: 2.38 }
-      ],
-      loraRank: Number(loraRank) || 16,
-      loraAlpha: Number(loraAlpha) || 32,
-      loraDropout: 0.05,
-      adapterArtifactName: 'adapter_model.safetensors',
-      outputModelName: outputName,
-      createdAt: new Date().toISOString()
-    };
-
-    inMemoryJobs.unshift(newJob);
-
-    // Simulate realistic background step-by-step training progression
-    let step = 2;
-    const interval = setInterval(() => {
-      step += 3;
-      const totalSteps = newJob.totalSteps;
-      const progress = Math.min(100, Math.round((step / totalSteps) * 100));
-      const epoch = Math.min(newJob.totalEpochs, Math.ceil((step / totalSteps) * newJob.totalEpochs));
-      
-      // Exponential decay loss curve
-      const decayLoss = Number((0.28 + (2.1 * Math.exp(-step / 14)) + (Math.random() * 0.04)).toFixed(3));
-      
-      newJob.progress = progress;
-      newJob.currentStep = Math.min(step, totalSteps);
-      newJob.currentEpoch = epoch;
-      newJob.currentLoss = decayLoss;
-      newJob.etaSeconds = Math.max(0, Math.round((totalSteps - step) * 2.2));
-      newJob.lossHistory.push({ step: newJob.currentStep, loss: decayLoss });
-
-      if (step >= totalSteps) {
-        clearInterval(interval);
-        newJob.status = 'completed';
-        newJob.progress = 100;
-        newJob.etaSeconds = 0;
-        newJob.completedAt = new Date().toISOString();
-      }
-    }, 1800);
-
-    res.json({ success: true, job: newJob, simulated: true, message: 'Simulated training run for the studio preview - no GPU execution, no adapter artifact is produced. Use the exported Python script for real training.' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+const simulatedJobTimers = new Map<string, ReturnType<typeof setInterval>>();
+registerSimulatedTrainingRoute(app, { foundation, datasets: inMemoryDatasets, jobs: inMemoryJobs, timers: simulatedJobTimers });
 
 // "Deploy" a fine-tuned model. Simulated preview only: it does NOT switch the
 // active inference engine (there is no trained artifact to serve), and it can

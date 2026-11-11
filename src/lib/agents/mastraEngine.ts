@@ -1,7 +1,7 @@
 import { DOCUMENT_REDACTION_NOTICE } from '../utils/privacyCopy';
 import * as Sentry from '@sentry/node';
 import { GoogleGenAI } from '@google/genai';
-import TenderModel, { ITender } from '../models/Tender';
+
 import { redactPii } from '../utils/redactPii';
 import { ISentrySpanRecord, IBidResponseSkeleton, IUserProfile, IOpenLlmConfig } from '../types/tender';
 import { generateBidResponseSkeleton } from '../utils/skeletonGenerator';
@@ -536,11 +536,8 @@ export async function executeRfpPipeline({
     cidbGrading: extractedData.cidbGrading || null
   });
 
-  // Database Persistence Step
-  addTrace(`[Sentry Trace] Initiating database sub-span: "Persist Extracted Schema to Database" (op: db.mongo)`);
-  const dbSpan = createSpan('Persist Extracted Schema to Database', 'db.mongo', 'Store verified tender document record');
-
-  let savedRecord: any = null;
+  // Private analysis is response-only. Never write its fields or excerpt to
+  // Mongo or the shared process Map, even when a Mongo connection is open.
   const tenderDoc = {
     title: extractedData.title || 'South African Public Sector RFP',
     referenceNumber: extractedData.referenceNumber || referenceId,
@@ -570,27 +567,7 @@ export async function executeRfpPipeline({
     createdAt: new Date()
   };
 
-  try {
-    // Attempt Mongoose create if connection is open
-    if (TenderModel.db && TenderModel.db.readyState === 1) {
-      savedRecord = await TenderModel.create(tenderDoc);
-      addTrace(`[MongoDB Atlas] Persisted record ${savedRecord._id} to 'tenders' collection.`);
-    } else {
-      // In-memory collection
-      const mockId = 'mongo-doc-' + Date.now();
-      savedRecord = { ...tenderDoc, _id: mockId, id: mockId };
-      inMemoryTenderStore.set(savedRecord.referenceNumber, savedRecord);
-      addTrace(`[MongoDB Engine] Document indexed in resilient session storage (ID: ${savedRecord._id}).`);
-    }
-    finalizeSpan(dbSpan, 'success', { recordId: savedRecord._id, reference: savedRecord.referenceNumber });
-  } catch (dbErr: any) {
-    console.warn('[DB Trace] Mongo create fallback:', dbErr.message);
-    const mockId = 'mongo-doc-' + Date.now();
-    savedRecord = { ...tenderDoc, _id: mockId, id: mockId };
-    inMemoryTenderStore.set(savedRecord.referenceNumber, savedRecord);
-    finalizeSpan(dbSpan, 'success', { note: 'Cached in memory repository' });
-    addTrace(`[MongoDB Engine] Document registered to local tender repository cache.`);
-  }
+  const savedRecord = { ...tenderDoc, _id: `analysis-${Date.now()}`, id: `analysis-${Date.now()}` };
 
   // Generate Bid Skeleton
   const skeleton = generateBidResponseSkeleton(savedRecord, companyProfile);

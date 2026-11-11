@@ -14,9 +14,12 @@ import { authorizeAndConsume, effectiveStatus, currentPeriodKey, type AccessDeci
 import { createWebhookRouter, MockBillingProvider, type BillingProvider } from './billing';
 import { evaluateReadiness, seedRequirementsForTender, type BidApplication, type Requirement } from './readiness';
 import { randomBytes } from 'node:crypto';
+import { AccountDeletionError, TenantWorkCoordinator } from './accountLifecycle';
+import { verifyPassword } from './passwords';
 
 export interface Foundation {
   config: FoundationConfig;
+  tenantWorkMiddleware: (req: Request, res: Response, next: NextFunction) => void;
   repos: FoundationRepos;
   /** Rejects cross-origin state-changing requests. Mount before routes. */
   originCheckMiddleware: (req: Request, res: Response, next: NextFunction) => void;
@@ -105,6 +108,9 @@ export interface FoundationOptions {
   config?: FoundationConfig;
   repos?: FoundationRepos;
   providers?: BillingProvider[];
+  /** Test injection only; production uses the fixed two-minute lease bound. */
+  requestLeaseMs?: number;
+  eraseEphemeral?: (tenantId: string) => void;
 }
 
 export function createFoundation(options: FoundationOptions = {}): Foundation {
@@ -118,6 +124,30 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
   const providers = options.providers || defaultBillingProviders(config);
 
   const sessionMiddleware = createSessionMiddleware(repos);
+  const coordinator = new TenantWorkCoordinator(30_000, 64, options.requestLeaseMs);
+  const tenantWorkMiddleware = (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.auth || !config.accountDeletionEnabled) { next(); return; }
+    const tenantId = req.auth.tenantId;
+    void coordinator.run(tenantId, req.method === 'DELETE' && req.path === '/api/account', async () => {
+      if (!await repos.tenants.getById(tenantId)) {
+        res.status(401).json({ success: false, error: 'authentication_required' }); return;
+      }
+      await new Promise<void>((resolve) => {
+        if (res.destroyed) { resolve(); return; } // handler has not started
+        // end is handler completion intent even if the client has left and
+        // the socket can no longer emit finish. Never release on close alone.
+        const originalEnd = res.end;
+        res.end = function (this: Response, ...args: any[]) {
+          try { return (originalEnd as any).apply(this, args); }
+          finally { resolve(); }
+        } as typeof res.end;
+        res.once('finish', resolve); next();
+      });
+    }).catch((e) => {
+      const err = e instanceof AccountDeletionError ? e : new AccountDeletionError('account_unavailable', 503);
+      if (!res.headersSent && !res.destroyed) res.status(err.status).json({ success: false, error: err.code });
+    });
+  };
   const authRouter = createAuthRouter(repos, config);
   const webhookRouter = createWebhookRouter(providers, repos);
 
@@ -336,6 +366,35 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
   });
 
   const accountRouter = Router();
+  const deletionAttempts = new Map<string, { count: number; until: number }>();
+  accountRouter.delete('/account', async (req: Request, res: Response) => {
+    if (!req.auth) { res.status(401).json({ success: false, error: 'authentication_required' }); return; }
+    if (!config.accountDeletionEnabled) { res.status(409).json({ success: false, error: 'account_deletion_not_enabled' }); return; }
+    if (!repos.accountDeletion) { res.status(409).json({ success: false, error: 'account_deletion_unavailable_for_store' }); return; }
+    const now = Date.now();
+    for (const [key, value] of deletionAttempts) if (value.until <= now) deletionAttempts.delete(key);
+    const attempt = deletionAttempts.get(req.auth.userId) || { count: 0, until: now + 10 * 60_000 };
+    if (attempt.count >= 5) { res.status(429).json({ success: false, error: 'too_many_attempts' }); return; }
+    attempt.count++; deletionAttempts.set(req.auth.userId, attempt);
+    const { password, confirmation } = req.body || {};
+    if (confirmation !== 'DELETE MY ACCOUNT' || typeof password !== 'string') {
+      res.status(400).json({ success: false, error: 'explicit_confirmation_and_password_required' }); return;
+    }
+    try {
+      const user = await repos.users.getById(req.auth.userId);
+      if (!user || !await verifyPassword(password, user.passwordHash)) {
+        res.status(403).json({ success: false, error: 'reauthentication_failed' }); return;
+      }
+      await repos.accountDeletion.erase(req.auth.tenantId);
+      options.eraseEphemeral?.(req.auth.tenantId);
+      res.setHeader('Set-Cookie', 'ta_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');
+      res.json({ success: true, message: 'Account and active workspace data deleted. Provider recovery copies follow their separate retention rules.' });
+    } catch (e) {
+      const err = e instanceof AccountDeletionError ? e : new AccountDeletionError('account_deletion_failed', 503);
+      res.status(err.status).json({ success: false, error: err.code });
+    }
+  });
+
   accountRouter.get('/account', async (req: Request, res: Response) => {
     if (!req.auth) {
       res.status(401).json({ success: false, error: 'not_authenticated' });
@@ -348,6 +407,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     res.json({
       success: true,
       account: {
+        accountDeletionAvailable: config.accountDeletionEnabled && Boolean(repos.accountDeletion),
         tenantId: req.auth.tenantId,
         email: req.auth.email,
         entitlement: ent
@@ -571,5 +631,5 @@ function applyReadyInvariant(app: BidApplication): void {
     }
   };
 
-  return { config, repos, originCheckMiddleware, sessionMiddleware, apiCacheHeaders, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
+  return { config, repos, originCheckMiddleware, sessionMiddleware, tenantWorkMiddleware, apiCacheHeaders, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
 }

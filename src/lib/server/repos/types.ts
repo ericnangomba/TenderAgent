@@ -89,6 +89,9 @@ export interface TenantProfile {
 import type { BidApplication } from '../readiness';
 
 export interface FoundationRepos {
+  /** Fail-closed where the driver cannot guarantee atomic whole-account erasure. */
+  accountDeletion?: { erase(tenantId: string): Promise<void> };
+
   tenants: {
     create(t: Tenant): Promise<void>;
     getById(id: string): Promise<Tenant | null>;
