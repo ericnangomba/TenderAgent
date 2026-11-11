@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { buildBidSkeletonDoc, buildBidSkeletonText } from '../lib/utils/bidSkeletonDoc';
 import { IBidResponseSkeleton } from '../lib/types/tender';
-import { X, Download, Copy, Check, FileText, CheckCircle2, AlertTriangle, Printer } from 'lucide-react';
+import { X, Download, Copy, Check, FileText, AlertTriangle } from 'lucide-react';
 
 interface BidSkeletonModalProps {
   skeleton: IBidResponseSkeleton | null;
@@ -18,100 +19,14 @@ export const BidSkeletonModal: React.FC<BidSkeletonModalProps> = ({
 
   if (!skeleton) return null;
 
-  const humanDate = (v: string) => {
-    const t = Date.parse(v);
-    if (isNaN(t)) return v || 'Confirm in the tender document';
-    return new Date(t).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
-  };
-  const bidderLine = [
-    skeleton.bidderProfile.companyName || '[Bidder company name]',
-    skeleton.bidderProfile.csdNumber ? `CSD: ${skeleton.bidderProfile.csdNumber}` : null,
-    skeleton.bidderProfile.bbbeeLevel ? `B-BBEE Level ${skeleton.bidderProfile.bbbeeLevel}` : null,
-  ].filter(Boolean).join(' | ');
-
   const handleCopy = () => {
-    const fullText = `TENDER BID RESPONSE SKELETON
-Tender Reference: ${skeleton.tenderReference}
-Tender Title: ${skeleton.tenderTitle}
-Issuing Department: ${skeleton.issuingDepartment}
-Bidder: ${bidderLine}
-Closing Date: ${humanDate(skeleton.closingDate)}
-
-==================================================
-${skeleton.sections.map(s => `${s.title}\n\n${s.content}`).join('\n\n==================================================\n\n')}
-
-==================================================
-PRICE SCHEDULE FRAMEWORK:
-${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p.unit} | Estimated Rate: ${p.estimatedRate} | Notes: ${p.notes}`).join('\n')}
-`;
-    navigator.clipboard.writeText(fullText);
+    navigator.clipboard.writeText(buildBidSkeletonText(skeleton));
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
 
   const handleDownloadDoc = () => {
-    const content = `<!DOCTYPE html>
-<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head>
-  <meta charset="utf-8">
-  <title>${skeleton.tenderReference} - Bid Response</title>
-  <style>
-    body { font-family: 'Calibri', 'Segoe UI', Arial, sans-serif; line-height: 1.5; color: #1e293b; padding: 20px; }
-    h1 { color: #047857; font-size: 20pt; border-bottom: 2pt solid #047857; padding-bottom: 6pt; }
-    h2 { color: #0f172a; font-size: 14pt; margin-top: 18pt; }
-    p { font-size: 11pt; white-space: pre-wrap; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12pt; }
-    th { background-color: #047857; color: white; border: 1pt solid #cbd5e1; padding: 8pt; text-align: left; }
-    td { border: 1pt solid #cbd5e1; padding: 8pt; font-size: 10pt; }
-    .badge { font-weight: bold; color: #047857; }
-  </style>
-</head>
-<body>
-  <h1>Tender Bid Response Submission Skeleton</h1>
-  <p><strong>Tender Reference:</strong> ${skeleton.tenderReference}</p>
-  <p><strong>Title:</strong> ${skeleton.tenderTitle}</p>
-  <p><strong>Issuing Organ of State:</strong> ${skeleton.issuingDepartment}</p>
-  <p><strong>Bidder Entity:</strong> ${skeleton.bidderProfile.companyName || '[Bidder company name]'}${skeleton.bidderProfile.registrationNumber ? ` (Reg: ${skeleton.bidderProfile.registrationNumber})` : ''}</p>
-  <p>${[
-    skeleton.bidderProfile.csdNumber ? `<strong>CSD Registration:</strong> ${skeleton.bidderProfile.csdNumber}` : '<strong>CSD Registration:</strong> [MAAA supplier number]',
-    skeleton.bidderProfile.bbbeeLevel ? `<strong>B-BBEE Status:</strong> Level ${skeleton.bidderProfile.bbbeeLevel} (${skeleton.bidderProfile.bbbeeType})` : '<strong>B-BBEE Status:</strong> [level per certificate or affidavit]',
-  ].join(' | ')}</p>
-  <p><strong>Closing Date:</strong> ${humanDate(skeleton.closingDate)}</p>
-  <hr/>
-
-  ${skeleton.sections.map(s => `<h2>${s.title}</h2><p>${s.content.replace(/\n/g, '<br/>')}</p>`).join('')}
-
-  <h2>Commercial Price Schedule Framework (state whether prices include or exclude VAT as this tender requires)</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Deliverable Item</th>
-        <th>Unit</th>
-        <th>Qty</th>
-        <th>Rate (ZAR)</th>
-        <th>Scope Specifications</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${skeleton.priceScheduleFramework.map(p => `
-        <tr>
-          <td>${p.item}</td>
-          <td>${p.unit}</td>
-          <td>${p.quantity}</td>
-          <td><strong>${p.estimatedRate}</strong></td>
-          <td>${p.notes}</td>
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>
-
-  <h2>Returnable Schedules (confirm against this tender's list)</h2>
-  <ul>
-    ${skeleton.recommendedSbdForms.map(form => `<li>${form}</li>`).join('')}
-  </ul>
-</body>
-</html>`;
-
+    const content = buildBidSkeletonDoc(skeleton);
     const blob = new Blob([content], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -120,7 +35,7 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   return (
@@ -135,13 +50,13 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
         <div className={`px-4 sm:px-6 py-4 border-b flex flex-wrap items-center justify-between gap-x-3 gap-y-2 ${
           isDarkMode ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
         }`}>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:border dark:border-emerald-800/80 dark:text-emerald-400">
+          <div className="flex items-center gap-3 min-w-0 max-w-full">
+            <div className="shrink-0 p-2 rounded-lg bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:border dark:border-emerald-800/80 dark:text-emerald-400">
               <FileText className="w-5 h-5" />
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className={`font-semibold text-base ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                <h3 className={`font-semibold text-base break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Draft Bid Response Skeleton
                 </h3>
                 <span className="text-[10px] uppercase bg-slate-100 text-slate-600 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 px-1.5 py-0.5 rounded font-semibold">
@@ -251,7 +166,7 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
                   Section 3.3: Itemized Commercial Price Schedule Framework
                 </h4>
                 <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Standardized cost breakdown formulated for South African public procurement compliance (15% VAT inclusive).
+                  Complete the tender's own pricing schedule. Confirm units, quantities, rates and VAT treatment from the source.
                 </p>
               </div>
 
@@ -291,18 +206,14 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
             <h5 className={`text-xs font-semibold uppercase tracking-wider mb-3 ${
               isDarkMode ? 'text-slate-400' : 'text-slate-500'
             }`}>
-              Bidder Compliance Verification Check (Against {skeleton.bidderProfile.companyName})
+              Declared Profile Details - Not Verified ({skeleton.bidderProfile.companyName})
             </h5>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
               {skeleton.complianceChecklist.map((c, i) => (
                 <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-lg border text-xs ${
                   isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
                 }`}>
-                  {c.compliant ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                  )}
+                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                   <div>
                     <div className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{c.item}</div>
                     <div className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -320,7 +231,7 @@ ${skeleton.priceScheduleFramework.map(p => `- ${p.item} | Qty: ${p.quantity} ${p
           isDarkMode ? 'border-slate-800 bg-slate-950/80 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'
         }`}>
           <div>
-            Formatted strictly under South African PPPFA & SBD Returnables Guidelines.
+            Draft framework only. Use the tender's official forms and confirm every requirement before submission.
           </div>
           <button
             onClick={onClose}

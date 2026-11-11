@@ -118,7 +118,7 @@ test('skeleton: no unconditional VAT-inclusive claim or B-BBEE level 0', () => {
   const blob = JSON.stringify(sk);
   assert.ok(!/strictly inclusive of 15%/.test(blob), 'no unconditional inclusive-VAT claim');
   assert.ok(!/Level 0/.test(blob), 'no B-BBEE level 0 assertion');
-  assert.match(blob, /standard VAT rate is 15%/);
+  assert.match(blob, /Confirm applicable VAT treatment from the source/);
   assert.match(blob, /\[Tender reference/);
 });
 

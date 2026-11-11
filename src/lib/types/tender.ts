@@ -96,13 +96,12 @@ export interface IBidResponseSkeleton {
     item: string;
     requirement: string;
     smeStatus: string;
-    compliant: boolean;
     referenceDocument: string;
   }[];
   priceScheduleFramework: {
     item: string;
     unit: string;
-    quantity: number;
+    quantity: number | string;
     estimatedRate: string;
     notes: string;
   }[];
