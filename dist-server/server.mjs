@@ -1820,7 +1820,7 @@ var PLANS = [
   },
   {
     // Complimentary tester cohort: granted only by an operator through
-    // account-bound code redemption, never by a billing webhook. Eric approved
+    // account-bound code redemption or explicit deployment approval, never by a billing webhook. Eric approved
     // a shared seven-day beta with 20 pilot analyses and no paid searches.
     // Campaign dates and recipients remain unset until separately approved.
     id: "test_cohort",
@@ -1838,8 +1838,8 @@ function assertSafeConfig(config, env = process.env) {
   if (config.betaCampaign) {
     const c = config.betaCampaign;
     const start = Date.parse(c.startsAt), end = Date.parse(c.endsAt);
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(c.id) || !/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(c.startsAt) || !/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(c.endsAt) || !Number.isFinite(start) || end - start !== 7 * 864e5 || !Array.isArray(c.invites) || c.invites.length > 100 || c.invites.some((i) => typeof i.userId !== "string" || !i.userId || !/^[a-f0-9]{64}$/.test(i.codeHash)) || new Set(c.invites.map((i) => i.userId)).size !== c.invites.length || new Set(c.invites.map((i) => i.codeHash)).size !== c.invites.length) {
-      throw new Error("Invalid beta campaign: require one fixed seven-day window and unique account-bound invite hashes.");
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(c.id) || !/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(c.startsAt) || !/(Z|[+-][0-9]{2}:[0-9]{2})$/.test(c.endsAt) || !Number.isFinite(start) || end - start !== 7 * 864e5 || !Array.isArray(c.invites) || c.invites.length > 100 || c.invites.some((i) => typeof i.userId !== "string" || !i.userId || !/^[a-f0-9]{64}$/.test(i.codeHash)) || new Set(c.invites.map((i) => i.userId)).size !== c.invites.length || new Set(c.invites.map((i) => i.codeHash)).size !== c.invites.length || c.directAccounts !== void 0 && (!Array.isArray(c.directAccounts) || c.directAccounts.length + c.invites.length > 100 || c.directAccounts.some((a) => !a || typeof a.userId !== "string" || !a.userId || typeof a.tenantId !== "string" || !a.tenantId || typeof a.email !== "string" || a.email !== a.email.trim().toLowerCase() || !/^[^\s@]+@[^\s@]+$/.test(a.email)) || (/* @__PURE__ */ new Set([...c.invites.map((i) => i.userId), ...c.directAccounts.map((a) => a.userId)])).size !== c.invites.length + c.directAccounts.length || new Set(c.directAccounts.map((a) => a.tenantId)).size !== c.directAccounts.length || new Set(c.directAccounts.map((a) => a.email)).size !== c.directAccounts.length)) {
+      throw new Error("Invalid beta campaign: require one fixed seven-day window and unique account-bound invites or approved accounts.");
     }
   }
   if (env.NODE_ENV === "production" && config.accountDeletionEnabled) {
@@ -2889,7 +2889,7 @@ function createFoundation(options = {}) {
       success: true,
       account: {
         beta: {
-          redeemAvailable: Boolean(repos.beta && config.betaCampaign && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
+          redeemAvailable: Boolean(repos.beta && config.betaCampaign && config.betaCampaign.invites.length > 0 && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
           endsAt: config.betaCampaign?.endsAt || null
         },
         accountDeletionAvailable: config.accountDeletionEnabled && Boolean(repos.accountDeletion),
@@ -3628,7 +3628,7 @@ function createPostgresRepos(pool, tenantConstraintsReady = false) {
           `INSERT INTO foundation_entitlements
           (tenant_id,plan_id,status,current_period_end,cancel_at_period_end,provider_name,
            provider_subscription_ref,refunded_at,last_event_at,last_event_id,updated_at)
-          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+          SELECT $1,$2,$3,$4::timestamptz,$5::boolean,$6,$7,$8::timestamptz,$9::timestamptz,$10,$11::timestamptz
           WHERE EXISTS (SELECT 1 FROM foundation_tenants WHERE id=$1)
           ON CONFLICT (tenant_id) DO NOTHING`,
           [
@@ -3930,6 +3930,54 @@ async function createStoreRepos(config) {
   return createMemoryRepos();
 }
 
+// src/lib/server/betaActivation.ts
+async function activateApprovedBetaAccounts(repos, config, now = /* @__PURE__ */ new Date()) {
+  assertSafeConfig(config);
+  const c = config.betaCampaign;
+  if (!c?.directAccounts?.length) return 0;
+  if (now >= new Date(c.endsAt)) return 0;
+  if (!repos.beta || now < new Date(c.startsAt)) {
+    throw new Error("Direct beta activation requires a supported store and an open approved window.");
+  }
+  const blocked = /* @__PURE__ */ new Set();
+  for (const account of c.directAccounts) {
+    const user = await repos.users.getById(account.userId);
+    const tenant = await repos.tenants.getById(account.tenantId);
+    if (!user || !tenant || user.tenantId !== account.tenantId || user.email.toLowerCase() !== account.email) {
+      throw new Error("Direct beta activation account binding mismatch. No account credentials are needed.");
+    }
+    const existing = await repos.entitlements.get(account.tenantId);
+    if (existing && (existing.planId !== "test_cohort" || existing.providerName !== "operator_comp" || existing.providerSubscriptionRef !== `beta:${c.id}` || entitlementStatus(existing, config, now) !== "active" || existing.currentPeriodEnd?.getTime() !== Date.parse(c.endsAt))) {
+      blocked.add(account.tenantId);
+    }
+  }
+  let confirmed = 0;
+  for (const account of c.directAccounts) {
+    if (blocked.has(account.tenantId)) continue;
+    await repos.beta.redeem({
+      tenantId: account.tenantId,
+      planId: "test_cohort",
+      status: "active",
+      currentPeriodEnd: new Date(c.endsAt),
+      cancelAtPeriodEnd: true,
+      providerName: "operator_comp",
+      providerSubscriptionRef: `beta:${c.id}`,
+      refundedAt: null,
+      lastEventAt: now,
+      lastEventId: `beta:${c.id}`,
+      updatedAt: now
+    });
+    const ent = await repos.entitlements.get(account.tenantId);
+    if (ent?.planId !== "test_cohort" || ent.providerName !== "operator_comp" || ent.providerSubscriptionRef !== `beta:${c.id}` || entitlementStatus(ent, config, now) !== "active" || ent.currentPeriodEnd?.getTime() !== Date.parse(c.endsAt)) {
+      blocked.add(account.tenantId);
+      continue;
+    }
+    confirmed++;
+  }
+  if (blocked.size) console.warn(`[beta] ${blocked.size} approved account(s) not activated: existing access was preserved.`);
+  return confirmed;
+}
+
 // server.ts
 dotenv.config();
 var foundationConfig = loadConfig();
@@ -3944,6 +3992,8 @@ var foundation = createFoundation({
     timers: simulatedJobTimers
   })
 });
+var directBetaActive = await activateApprovedBetaAccounts(foundation.repos, foundation.config);
+if (foundation.config.betaCampaign?.directAccounts?.length) console.log(`[beta] ${directBetaActive} approved account(s) confirmed active.`);
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = path.dirname(__filename);
 var app = express();

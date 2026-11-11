@@ -42,3 +42,42 @@ The local synthetic journey covers signup, redemption, actual offline analysis/c
 Before release: independent review, full tests/typecheck/build and visual checks. Publish/deployment is separate from campaign activation. A live prelaunch smoke needs its own approved synthetic identity and temporary rehearsal setup, not an unannounced start of the real shared window. Main/operator must settle that bounded setup before any live entitlement or configuration change. A local test is not evidence that a live authenticated journey passed.
 
 This is a rule-based beta preview, not proof of language-model analysis quality or payment collection. Testers must verify requirements against the source tender. Confidential-document clearance, safe backup restoration and production account deletion remain out of scope.
+
+## Direct account approval (optional, no promo code)
+
+The deployment operator can add an optional `directAccounts` array to the same
+campaign configuration. Keep `invites: []` when no code recipients are planned.
+Each entry requires all three approved fields:
+
+```json
+{ "userId": "<approved account ID>", "tenantId": "<approved full tenant ID>", "email": "<approved lowercase email>" }
+```
+
+No real tester identities or dates are included in this repository. Leave
+`BETA_CAMPAIGN_JSON` unset while implementing, testing and deploying the inactive
+release. Only after release readiness, calculate the approved fixed start/end
+and configure the approved account. The shared start is a deployment decision,
+not the next login time; deployment delays consume time after that fixed start.
+
+Before opening traffic, the server validates every listed account ID, tenant ID
+and email against the stored records. A mismatch fails startup before granting
+any listed accounts. An email alone cannot select an account. Atomic first
+insertion uses the same repository primitive as code redemption. Repeated
+starts never replace paid, revoked or previous entitlements, extend the end or
+reset usage. Existing blocked entitlements are left unchanged and reported as
+an aggregate warning, so routine restarts after revocation do not stop the app.
+A database failure can leave a subset of newly granted accounts; retries are
+idempotent. Do not call an account active without checking its Account screen.
+
+Future-window direct activation fails startup rather than silently scheduling a
+grant. At or after expiry the activation helper does nothing, so routine restarts
+still allow sign-in and saved drafts. Backend campaign-aware access checks close
+beta access at the exact shared cutoff. Removing campaign config closes beta
+access without deleting account data; no production deletion is needed.
+
+This is a deployment-only option: it adds no activation endpoint, admin UI,
+mailing, password collection or paid provider call. The Account screen reports
+the existing active beta status and limits without a code prompt in direct-only
+campaigns. A late approved tester uses the unchanged campaign ID/end and receives
+only the remaining time. Account-specific confirmation after deployment and the
+separately approved real tester analysis remain live operator checks.

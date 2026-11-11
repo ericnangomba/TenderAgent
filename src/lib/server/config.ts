@@ -27,7 +27,7 @@ export const PLANS: Plan[] = [
   },
   {
     // Complimentary tester cohort: granted only by an operator through
-    // account-bound code redemption, never by a billing webhook. Eric approved
+    // account-bound code redemption or explicit deployment approval, never by a billing webhook. Eric approved
     // a shared seven-day beta with 20 pilot analyses and no paid searches.
     // Campaign dates and recipients remain unset until separately approved.
     id: 'test_cohort',
@@ -48,6 +48,8 @@ export interface BetaCampaign {
   startsAt: string;
   endsAt: string;
   invites: Array<{ userId: string; codeHash: string }>;
+  /** Optional operator-approved accounts. No secrets or self-serve activation. */
+  directAccounts?: Array<{ userId: string; tenantId: string; email: string }>;
 }
 
 export interface FoundationConfig {
@@ -117,8 +119,16 @@ export function assertSafeConfig(config: FoundationConfig, env: NodeJS.ProcessEn
       || !Array.isArray(c.invites) || c.invites.length > 100
       || c.invites.some(i => typeof i.userId !== 'string' || !i.userId || !/^[a-f0-9]{64}$/.test(i.codeHash))
       || new Set(c.invites.map(i => i.userId)).size !== c.invites.length
-      || new Set(c.invites.map(i => i.codeHash)).size !== c.invites.length) {
-      throw new Error('Invalid beta campaign: require one fixed seven-day window and unique account-bound invite hashes.');
+      || new Set(c.invites.map(i => i.codeHash)).size !== c.invites.length
+      || (c.directAccounts !== undefined && (!Array.isArray(c.directAccounts)
+        || c.directAccounts.length + c.invites.length > 100
+        || c.directAccounts.some(a => !a || typeof a.userId !== 'string' || !a.userId
+          || typeof a.tenantId !== 'string' || !a.tenantId
+          || typeof a.email !== 'string' || a.email !== a.email.trim().toLowerCase() || !/^[^\s@]+@[^\s@]+$/.test(a.email))
+        || new Set([...c.invites.map(i => i.userId), ...c.directAccounts.map(a => a.userId)]).size !== c.invites.length + c.directAccounts.length
+        || new Set(c.directAccounts.map(a => a.tenantId)).size !== c.directAccounts.length
+        || new Set(c.directAccounts.map(a => a.email)).size !== c.directAccounts.length))) {
+      throw new Error('Invalid beta campaign: require one fixed seven-day window and unique account-bound invites or approved accounts.');
     }
   }
   if (env.NODE_ENV === 'production' && config.accountDeletionEnabled) {

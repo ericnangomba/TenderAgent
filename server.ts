@@ -22,6 +22,7 @@ dotenv.config();
 import { createFoundation } from './src/lib/server/foundation';
 import { loadConfig, assertSafeConfig } from './src/lib/server/config';
 import { createStoreRepos } from './src/lib/server/repos';
+import { activateApprovedBetaAccounts } from './src/lib/server/betaActivation';
 const foundationConfig = loadConfig();
 // Fail closed before opening any store connection (e.g. STORE=postgres
 // without DATABASE_URL must never attempt a localhost connection).
@@ -31,6 +32,11 @@ const foundation = createFoundation({ config: foundationConfig, repos: await cre
     tenders: inMemoryTenderStore, datasets: inMemoryDatasets, jobs: inMemoryJobs, timers: simulatedJobTimers,
   }),
 });
+
+// Explicit deployment approval only. Validate stored account bindings and grant
+// before opening traffic; no login credentials, new endpoint or paid API calls.
+const directBetaActive = await activateApprovedBetaAccounts(foundation.repos, foundation.config);
+if (foundation.config.betaCampaign?.directAccounts?.length) console.log(`[beta] ${directBetaActive} approved account(s) confirmed active.`);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

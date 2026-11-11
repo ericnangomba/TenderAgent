@@ -218,7 +218,7 @@ export function createPostgresRepos(pool: PoolLike, tenantConstraintsReady = fal
         await pool.query(`INSERT INTO foundation_entitlements
           (tenant_id,plan_id,status,current_period_end,cancel_at_period_end,provider_name,
            provider_subscription_ref,refunded_at,last_event_at,last_event_id,updated_at)
-          SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+          SELECT $1,$2,$3,$4::timestamptz,$5::boolean,$6,$7,$8::timestamptz,$9::timestamptz,$10,$11::timestamptz
           WHERE EXISTS (SELECT 1 FROM foundation_tenants WHERE id=$1)
           ON CONFLICT (tenant_id) DO NOTHING`,
           [e.tenantId,e.planId,e.status,e.currentPeriodEnd,e.cancelAtPeriodEnd,e.providerName,

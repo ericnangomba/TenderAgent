@@ -365,7 +365,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     res.json({
       success: true,
       account: {
-        beta: { redeemAvailable: Boolean(repos.beta && config.betaCampaign && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
+        beta: { redeemAvailable: Boolean(repos.beta && config.betaCampaign && config.betaCampaign.invites.length > 0 && now >= new Date(config.betaCampaign.startsAt) && now < new Date(config.betaCampaign.endsAt)),
           endsAt: config.betaCampaign?.endsAt || null },
         accountDeletionAvailable: config.accountDeletionEnabled && Boolean(repos.accountDeletion),
         tenantId: req.auth.tenantId,
