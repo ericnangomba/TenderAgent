@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sidebar, TabKey } from './components/Sidebar';
 import { Header } from './components/Header';
 import { RfpAnalyzer } from './components/RfpAnalyzer';
@@ -22,8 +22,10 @@ import { IUserProfile, ITender, IBidResponseSkeleton, ISentrySpanRecord } from '
 import { SAMPLE_TENDERS } from './lib/data/sampleTenders';
 import { generateBidResponseSkeleton } from './lib/utils/skeletonGenerator';
 
+import { toolsAvailable, accessGuidance, type WorkspaceAccount } from './lib/access/workspaceAccess';
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabKey>('analyzer');
+  const [activeTab, setActiveTab] = useState<TabKey>('account');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   // Light-first product: theme toggle removed by product decision (redesign).
   const isDarkMode = false;
@@ -37,20 +39,65 @@ export default function App() {
   const [customerMode, setCustomerMode] = useState(false);
   const operationsMode = Boolean(auth?.isAdmin) && !customerMode;
 
+  const currentOwner = useRef(auth?.userId);
+  currentOwner.current = auth?.userId;
+  const [access, setAccess] = useState<WorkspaceAccount | null>(null);
+  const [accessFailed, setAccessFailed] = useState(false);
+  const refreshAccess = useCallback(async () => {
+    const owner = auth?.userId;
+    if (!owner || auth?.isAdmin) return;
+    try {
+      const response = await fetch('/api/account', { cache: 'no-store' });
+      if (!response.ok) throw new Error('access');
+      const data = await response.json();
+      if (!data.success || !data.account) throw new Error('access');
+      if (currentOwner.current === owner) { setAccess(data.account); setAccessFailed(false); }
+    } catch { if (currentOwner.current === owner) { setAccess(null); setAccessFailed(true); } }
+  }, [auth?.userId, auth?.isAdmin]);
+  useEffect(() => {
+    if (!auth || auth.isAdmin) return;
+    // No polling: recheck on entry and on returning to this browser tab.
+    let current = true;
+    const check = async () => {
+      try {
+        const response = await fetch('/api/account', { cache: 'no-store' });
+        if (!response.ok) throw new Error('access');
+        const data = await response.json();
+        if (!data.success || !data.account) throw new Error('access');
+        if (current) { setAccess(data.account); setAccessFailed(false); }
+      } catch { if (current) { setAccess(null); setAccessFailed(true); } }
+    };
+    void check();
+    const visible = () => { if (document.visibilityState === 'visible') void check(); };
+    document.addEventListener('visibilitychange', visible);
+    return () => { current = false; document.removeEventListener('visibilitychange', visible); };
+  }, [auth?.userId, auth?.isAdmin]);
+  useEffect(() => {
+    const end = access?.entitlement?.currentPeriodEnd;
+    if (!end || !toolsAvailable(access)) return;
+    const timer = window.setTimeout(() => setAccess(current => current ? { ...current, entitlement: { ...current.entitlement, effectiveStatus: 'cancelled' } } : null), Math.min(Math.max(0, Date.parse(end) - Date.now()), 2147483647));
+    return () => window.clearTimeout(timer);
+  }, [access]);
+  const toolsUnlocked = toolsAvailable(access, Boolean(auth?.isAdmin));
+  const guidance = accessGuidance(access, accessFailed);
+  const safeTab = toolsUnlocked || ['account', 'vault'].includes(activeTab) ? activeTab : 'account';
+  const navigate = (tab: TabKey) => setActiveTab(toolsUnlocked || ['account', 'vault'].includes(tab) ? tab : 'account');
+
   // Restore an existing session on load.
   useEffect(() => {
     fetch('/api/auth/me')
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
-        if (d?.success) { setAuth({ tenantId: d.tenantId, email: d.email, userId: d.userId, isAdmin: Boolean(d.isAdmin) }); setActiveTab(d.isAdmin ? 'admin' : 'analyzer'); }
+        if (d?.success) { setAuth({ tenantId: d.tenantId, email: d.email, userId: d.userId, isAdmin: Boolean(d.isAdmin) }); setActiveTab(d.isAdmin ? 'admin' : 'account'); }
       })
       .catch(() => undefined);
   }, []);
 
   const handleAuthChange = (next: AuthState | null) => {
+    setAccess(null); setAccessFailed(false);
     setAuth(next);
     setCustomerMode(false);
-    setActiveTab(next?.isAdmin ? 'admin' : 'analyzer');
+    setActiveTab(next?.isAdmin ? 'admin' : 'account');
     setUserProfile(EMPTY_PROFILE);
     setProfileStatus('loading');
   };
@@ -152,14 +199,15 @@ export default function App() {
 
       {/* Sidebar Navigation */}
       <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        activeTab={safeTab}
+        setActiveTab={navigate}
         isOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         isDarkMode={isDarkMode}
         userProfile={userProfile}
         isAdmin={Boolean(auth?.isAdmin)}
         operationsMode={operationsMode}
+        toolsLocked={!toolsUnlocked}
         onSwitchWorkspace={() => { setCustomerMode(!customerMode); setActiveTab(customerMode ? 'admin' : 'analyzer'); }}
         isSampleProfile={!auth}
       />
@@ -169,7 +217,7 @@ export default function App() {
 
         {/* Unclouded Clean Header */}
         <Header
-          activeTab={activeTab}
+          activeTab={safeTab}
           onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
           isDarkMode={isDarkMode}
           isAdmin={Boolean(auth?.isAdmin)}
@@ -181,8 +229,18 @@ export default function App() {
 
         {/* View Workspace: one view's failure must never blank the app */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          <ViewErrorBoundary key={activeTab} isDarkMode={isDarkMode}>
-          {activeTab === 'analyzer' && (
+          {!operationsMode && !toolsUnlocked && <section role="status" aria-live="polite" className="mb-6 rounded-2xl border-2 border-amber-400 bg-amber-50 p-5 text-amber-950">
+            <h2 className="text-xl font-semibold">{guidance.title}</h2>
+            <p className="mt-2 text-sm leading-relaxed">{guidance.body}</p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              {safeTab === 'account' && access?.beta?.redeemAvailable && access.entitlement?.effectiveStatus === 'none' && <a href="#beta-code" className="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-medium text-white">Enter beta code</a>}
+              {safeTab !== 'account' && <button onClick={() => navigate('account')} className="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-medium text-white">Open Account</button>}
+              <button onClick={() => navigate('vault')} className="rounded-lg border border-amber-700 bg-white px-4 py-2 text-sm font-medium">Complete company information</button>
+              {accessFailed && <button onClick={refreshAccess} className="rounded-lg border border-amber-700 bg-white px-4 py-2 text-sm">Retry access check</button>}
+            </div>
+          </section>}
+          <ViewErrorBoundary key={safeTab} isDarkMode={isDarkMode}>
+          {safeTab === 'analyzer' && (
             <RfpAnalyzer
               userProfile={userProfile}
               onOpenSkeleton={handleOpenSkeleton}
@@ -193,20 +251,20 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'discovery' && (
+          {safeTab === 'discovery' && (
             <TenderDiscovery
               onSelectTenderForAnalysis={handleSelectTenderFromDiscovery}
               isDarkMode={isDarkMode}
             />
           )}
 
-          {activeTab === 'finetuning' && auth?.isAdmin && (
+          {safeTab === 'finetuning' && auth?.isAdmin && (
             <FineTuningStudio
               isDarkMode={isDarkMode}
             />
           )}
 
-          {activeTab === 'readiness' && (
+          {safeTab === 'readiness' && (
             <BidReadiness
               isDarkMode={isDarkMode}
               signedIn={Boolean(auth)}
@@ -214,7 +272,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'calculator' && (
+          {safeTab === 'calculator' && (
             <PointsCalculator
               initialSystem={calculatorSystem}
               tenderTitle={calculatorTenderTitle}
@@ -223,7 +281,7 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'vault' && (
+          {safeTab === 'vault' && (
             <ProfileVault
               userProfile={userProfile}
               profileStatus={profileStatus}
@@ -232,34 +290,36 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'sbd' && (
+          {safeTab === 'sbd' && (
             <SbdFormsGuide
               isDarkMode={isDarkMode}
             />
           )}
 
-          {activeTab === 'tracing' && auth?.isAdmin && (
+          {safeTab === 'tracing' && auth?.isAdmin && (
             <SentryTraceViewer
               recentSpans={recentSpans}
               isDarkMode={isDarkMode}
             />
           )}
 
-          {activeTab === 'settings' && auth?.isAdmin && (
+          {safeTab === 'settings' && auth?.isAdmin && (
             <Settings
               isDarkMode={isDarkMode}
             />
           )}
 
-          {activeTab === 'admin' && auth?.isAdmin && (
+          {safeTab === 'admin' && auth?.isAdmin && (
             <AdminDashboard />
           )}
-          {activeTab === 'account' && (
+          {safeTab === 'account' && (
             <Account
               isDarkMode={isDarkMode}
               auth={auth}
               onAuthChange={handleAuthChange}
               operationsMode={operationsMode}
+              accessInfo={access}
+              onAccessChange={setAccess}
             />
           )}
                   </ViewErrorBoundary>

@@ -1,27 +1,24 @@
 import React, { useState } from 'react';
 import { LogOut, ShieldCheck, Building2, AlertCircle, CheckCircle2, KeyRound, Trash2 } from 'lucide-react';
+import type { WorkspaceAccount } from '../lib/access/workspaceAccess';
 import type { AuthState } from './AuthCard';
 
 interface AccountProps {
   isDarkMode: boolean;
   operationsMode?: boolean;
+  accessInfo?: WorkspaceAccount | null;
+  onAccessChange?: (account: WorkspaceAccount | null) => void;
   auth: AuthState | null;
   onAuthChange: (auth: AuthState | null) => void;
 }
 
-interface AccountInfo {
-  beta?: { redeemAvailable: boolean; endsAt: string | null };
-  accountDeletionAvailable?: boolean;
-  entitlement?: { effectiveStatus?: string; planId?: string | null; currentPeriodEnd?: string | null };
-  usage?: { analyses: number; serpapiLookups: number };
-  allowances?: { includedAnalyses: number; includedSerpapiLookups: number } | null;
-}
+type AccountInfo = WorkspaceAccount;
 
 /**
  * Signed-in workspace account view: identity, subscription status and usage.
  * Sign-in/registration lives on the landing page (AuthCard), not here.
  */
-export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange, operationsMode = false }) => {
+export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange, operationsMode = false, onAccessChange, accessInfo }) => {
   const [betaCode, setBetaCode] = useState('');
   const [betaMessage, setBetaMessage] = useState('');
   const [betaBusy, setBetaBusy] = useState(false);
@@ -39,11 +36,12 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
       setInfo(null);
       return;
     }
+    if (accessInfo !== undefined) { setInfo(accessInfo); return; }
     fetch('/api/account')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d?.success && setInfo(d.account))
       .catch(() => setInfo(null));
-  }, [auth]);
+  }, [auth, accessInfo]);
 
   // Fixed campaign expiry also closes an already-open code form. The server
   // remains authoritative if a backgrounded browser delays this timer.
@@ -69,6 +67,7 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
       const d = await account.json();
       if (!d.success || d.account?.entitlement?.planId !== 'test_cohort' || d.account.entitlement.effectiveStatus !== 'active') throw new Error('unconfirmed');
       setInfo(d.account);
+      onAccessChange?.(d.account);
       setBetaMessage('Beta access confirmed active. No payment was taken. Your shared end date and pilot allowance are shown below.');
     } catch { setBetaMessage('Could not confirm access. Refresh your account before trying again.'); }
     finally { setBetaBusy(false); }
@@ -169,7 +168,7 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className={card}>
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50'}`}>
               <Building2 className={`w-5 h-5 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
@@ -219,7 +218,7 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           {status === 'active'
             ? <CheckCircle2 className={`w-4 h-4 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
             : <AlertCircle className={`w-4 h-4 ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`} />}
-          <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{info?.entitlement?.planId === 'test_cohort' ? (status === 'active' ? 'Free beta access active' : 'Beta access ended') : statusLabel[status] || status}</span>
+          <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{info?.entitlement?.planId === 'test_cohort' ? (status === 'active' ? 'Free beta access active' : 'Beta access ended') : status === 'none' && info?.beta?.redeemAvailable ? 'Beta code not redeemed' : statusLabel[status] || status}</span>
         </div>
         {info?.entitlement?.currentPeriodEnd && status === 'active' && (
           <p className={`text-xs mt-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
@@ -229,8 +228,8 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
         <p className="text-xs mt-3 text-slate-500">Real payments are not connected. Beta access does not collect a card or start a paid subscription.</p>
         {info?.entitlement?.planId === 'test_cohort' && <p className="text-xs mt-2 text-slate-500">Public or synthetic documents only. Rule-based preview, not a language model. No paid searches. Check the source tender before relying on results.</p>}
         {info?.beta?.redeemAvailable && info.entitlement?.effectiveStatus === 'none' && (
-          <form onSubmit={redeemBeta} className="mt-4 space-y-2">
-            <label htmlFor="beta-code" className="block text-sm font-medium">Redeem beta code</label>
+          <form onSubmit={redeemBeta} className="mt-4 space-y-3 rounded-xl border-2 border-emerald-600 bg-emerald-50 p-4 text-emerald-950">
+            <label htmlFor="beta-code" className="block text-lg font-semibold">Redeem your provided beta code</label>
             <p className="text-xs text-slate-500">One shared beta window. Late joiners get the time remaining, not a new seven days.</p>
             <input id="beta-code" type="password" autoComplete="off" value={betaCode} onChange={e => setBetaCode(e.target.value)} maxLength={256} required className="w-full rounded-lg border border-slate-300 bg-transparent p-3" />
             <button disabled={betaBusy} className="rounded-lg bg-emerald-700 text-white px-4 py-2 disabled:opacity-50">{betaBusy ? 'Checking...' : 'Apply beta code'}</button>

@@ -17,6 +17,7 @@ interface SidebarProps {
   /** Server-derived operator flag: shows the administration section. */
   isAdmin?: boolean;
   operationsMode?: boolean;
+  toolsLocked?: boolean;
   onSwitchWorkspace?: () => void;
   userProfile: IUserProfile;
   isProcessing?: boolean;
@@ -46,6 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isDarkMode,
   isAdmin = false,
   operationsMode = false,
+  toolsLocked = false,
   onSwitchWorkspace,
   userProfile,
   isSampleProfile,
@@ -218,16 +220,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {sec.items.map((item) => {
                 const Icon = item.icon;
+                const locked = toolsLocked && !['vault', 'account'].includes(item.key);
                 const isActive = activeTab === item.key;
 
                 return (
                   <button
                     key={item.key}
+                    disabled={locked}
+                    title={locked ? 'Activate access in Account to unlock this tool' : undefined}
                     onClick={() => {
                       setActiveTab(item.key);
                       onCloseMobile();
                     }}
-                    className={`w-full text-left px-3 py-2.5 rounded-lg flex items-center justify-between transition-all text-xs font-medium ${isActive
+                    className={`w-full text-left px-3 py-2.5 rounded-lg flex items-center justify-between transition-all text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed ${isActive
                         ? isDarkMode
                           ? 'bg-slate-800 text-emerald-400 shadow-sm border border-slate-700/80'
                           : 'bg-emerald-50 text-emerald-800 shadow-sm border border-emerald-200'
@@ -247,7 +252,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             ? isDarkMode ? 'text-slate-400' : 'text-emerald-600'
                             : isDarkMode ? 'text-slate-500' : 'text-slate-400'
                           }`}>
-                          {item.description}
+                          {locked ? 'Locked - activate in Account' : item.description}
                         </div>
                       </div>
                     </div>
