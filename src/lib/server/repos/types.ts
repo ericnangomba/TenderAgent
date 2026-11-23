@@ -88,10 +88,21 @@ export interface TenantProfile {
 
 import type { BidApplication } from '../readiness';
 
+export interface DeletionLedgerEntry {
+  tenantId: string;
+  erasedAt: Date;
+}
+
 export interface FoundationRepos {
   pilot?: import('../betaPilot').PilotStore;
   /** Fail-closed where the driver cannot guarantee atomic whole-account erasure. */
   accountDeletion?: { erase(tenantId: string): Promise<void> };
+  /** Completed-erasure record for restore reconciliation. Present only on
+   *  deletion-capable drivers. Minimal metadata: tenant IDs and times, never
+   *  customer content. A database restore to a pre-deletion point loses these
+   *  rows too, so the operator ALSO keeps an external copy (see
+   *  docs/DATA_LIFECYCLE.md); this table is the in-database cross-check. */
+  deletionLedger?: { list(): Promise<DeletionLedgerEntry[]> };
 
   /** Atomic first grant only. Existing/revoked/paid entitlements are never replaced. */
   beta?: { redeem(e: Entitlement): Promise<void> };
@@ -108,6 +119,10 @@ export interface FoundationRepos {
     create(s: Session): Promise<void>;
     getByTokenHash(tokenHash: string): Promise<Session | null>;
     delete(id: string): Promise<void>;
+    /** Housekeeping only: removes rows whose expiry has already passed.
+     *  Expired sessions are already rejected, so this changes no access and
+     *  no customer-content retention. Returns the number of removed rows. */
+    pruneExpired?(now: Date): Promise<number>;
   };
   entitlements: {
     get(tenantId: string): Promise<Entitlement | null>;
