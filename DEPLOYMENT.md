@@ -40,6 +40,7 @@ just works (no CORS, no SameSite=None).
 - Funnel address: https://apphosting.tail1cb332.ts.net (Tailscale
   terminates TLS at the host and forwards to the app's private port only;
   no other service on the host is published by this).
+- Recovery mode (only after a database restore, before reopening access): set `RESTORE_RECONCILIATION=required` so the app refuses all API traffic except `/api/health`, run `node --import tsx scripts/reconcile-restored-deletions.ts <deletion-record-file>` with the operator's external deletion record, then restart without the flag. See docs/DATA_LIFECYCLE.md.
 - Required env additions on the backend once behind the proxy:
   - `COOKIE_SECURE=true` (all traffic is HTTPS now)
   - `PROFILE_FIELD_KEY` (recommended: field-level encryption for the saved SARS TCS
