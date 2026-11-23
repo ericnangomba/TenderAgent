@@ -1,6 +1,6 @@
 /** In-memory repositories: default driver for development and the whole test suite. */
 import type {
-  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile,
+  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile, DeletionLedgerEntry,
 } from './types';
 import { AccountDeletionError, hasExternalBilling } from '../accountLifecycle';
 import { pilotOpen, pilotEntitlement, matchingPilotEntitlement, type PilotCampaign, type PilotInvite, type PilotChange } from '../betaPilot';
@@ -20,10 +20,14 @@ export function createMemoryRepos(): FoundationRepos {
   const pilotChanges: PilotChange[] = [];
   const pilotInvites = new Map<string, PilotInvite>();
   const applications = new Map<string, BidApplication>();
+  const deletionLedger = new Map<string, DeletionLedgerEntry>();
 
   const clone = <T>(v: T): T => structuredClone(v);
 
   const repos: FoundationRepos = {
+    deletionLedger: {
+      async list() { return [...deletionLedger.values()].map((e) => ({ ...e })); },
+    },
     accountDeletion: {
       async erase(tenantId) {
         if (!tenants.has(tenantId)) return;
@@ -31,6 +35,10 @@ export function createMemoryRepos(): FoundationRepos {
           || [...billingEventIds.values()].some(e => e.tenantId === tenantId && hasExternalBilling(e.provider))) {
           throw new AccountDeletionError('billing_resolution_required');
         }
+        // Record the completed erasure (ID and time only, never content) so
+        // restore reconciliation can see it. After every throw path above:
+        // a blocked erasure must never be recorded as completed.
+        if (!deletionLedger.has(tenantId)) deletionLedger.set(tenantId, { tenantId, erasedAt: new Date() });
         // Synchronous block: no partially erased state can interleave.
         for (const [id, u] of usersById) if (u.tenantId === tenantId) { usersById.delete(id); usersByEmail.delete(u.email.toLowerCase()); }
         for (const [id, v] of sessionsById) if (v.tenantId === tenantId) { sessionsById.delete(id); sessionsByToken.delete(v.tokenHash); }
@@ -102,6 +110,11 @@ export function createMemoryRepos(): FoundationRepos {
       async delete(id) {
         const s = sessionsById.get(id);
         if (s) { sessionsById.delete(id); sessionsByToken.delete(s.tokenHash); }
+      },
+      async pruneExpired(now: Date) {
+        let removed = 0;
+        for (const [id, v] of sessionsById) if (v.expiresAt.getTime() <= now.getTime()) { sessionsById.delete(id); sessionsByToken.delete(v.tokenHash); removed++; }
+        return removed;
       },
     },
     entitlements: {

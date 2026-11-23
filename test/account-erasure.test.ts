@@ -4,7 +4,7 @@ import { Pool } from 'pg';
 import { startTestApp, stopTestApp, signup } from './helpers';
 import { createMemoryRepos } from '../src/lib/server/repos/memory';
 import { emptyEntitlement, applyBillingEvent } from '../src/lib/server/entitlement';
-import { ensurePostgresSchema, ensureTenantForeignKeys, createPostgresRepos, erasePostgresTenant } from '../src/lib/server/repos/postgres';
+import { ensurePostgresSchema, ensureTenantForeignKeys, ensureDeletionLedgerTable, createPostgresRepos, erasePostgresTenant } from '../src/lib/server/repos/postgres';
 
 const password = 'synthetic-test-password-9';
 const confirmation = 'DELETE MY ACCOUNT';
@@ -79,7 +79,7 @@ test('isolated real Postgres erasure: FK barrier, rollback, idempotence, late wr
     await assert.rejects(ensureTenantForeignKeys(pool), /foreign key/);
     assert.equal(Number((await pool.query("SELECT count(*) FROM foundation_profiles WHERE tenant_id='orphan'")).rows[0].count),1,'migration never deletes orphan content');
     await pool.query("DELETE FROM foundation_profiles WHERE tenant_id='orphan'");
-    await ensureTenantForeignKeys(pool); await ensureTenantForeignKeys(pool);
+    await ensureTenantForeignKeys(pool); await ensureTenantForeignKeys(pool); await ensureDeletionLedgerTable(pool);
     const r=createPostgresRepos(pool,true),at=new Date();
     const seed=async(id:string)=>{await r.tenants.create({id,companyName:id,createdAt:at}); await r.profiles.put({tenantId:id,profile:{secret:`private-${id}`},updatedAt:at});};
     await seed('a');await seed('b');
@@ -94,6 +94,7 @@ test('isolated real Postgres erasure: FK barrier, rollback, idempotence, late wr
     await pool.query(`CREATE FUNCTION fail_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic failure'; END $$; CREATE TRIGGER fail_delete BEFORE DELETE ON foundation_profiles FOR EACH ROW EXECUTE FUNCTION fail_delete()`);
     await assert.rejects(r.accountDeletion!.erase('a'),/account_deletion_failed/);
     assert.ok(await r.tenants.getById('a'));assert.ok(await r.profiles.get('a'));
+    assert.equal((await r.deletionLedger!.list()).length,0,'rolled-back erasure leaves no ledger row');
     await pool.query('DROP TRIGGER fail_delete ON foundation_profiles; DROP FUNCTION fail_delete()');
     let release!:()=>void,locked!:()=>void;
     const gate=new Promise<void>(r=>release=r),hit=new Promise<void>(r=>locked=r);
@@ -106,7 +107,9 @@ test('isolated real Postgres erasure: FK barrier, rollback, idempotence, late wr
       assert.equal(Number((await pool.query(`SELECT count(*) FROM foundation_${table} WHERE tenant_id='a'`)).rows[0].count),0,table);
       assert.equal(Number((await pool.query(`SELECT count(*) FROM foundation_${table} WHERE tenant_id='b'`)).rows[0].count),1,table);
     }
+    assert.deepEqual((await r.deletionLedger!.list()).map(e=>e.tenantId),['a'],'completed erasure is ledgered');
     await r.accountDeletion!.erase('a');
+    assert.equal((await r.deletionLedger!.list()).length,1,'idempotent erasure keeps one ledger row');
     await seed('c');
     const lostCommit={query:pool.query.bind(pool),async connect(){const c=await pool.connect();return {async query(sql:string,params?:unknown[]){const out=await c.query(sql,params);if(sql==='COMMIT')throw new Error('synthetic lost acknowledgement');return out;},release:(error?:boolean)=>c.release(error)};}};
     await erasePostgresTenant(lostCommit,'c'); assert.equal(await r.tenants.getById('c'),null);

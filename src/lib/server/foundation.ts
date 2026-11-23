@@ -27,6 +27,10 @@ export interface Foundation {
   sessionMiddleware: (req: Request, res: Response, next: NextFunction) => void;
   /** Auth + entitlement guards for spend-bearing routes. Mount after sessionMiddleware. */
   guardMiddleware: (req: Request, res: Response, next: NextFunction) => void;
+  /** Recovery mode after a database restore: refuses API traffic while
+   *  RESTORE_RECONCILIATION=required. Mount before all API routers, with
+   *  /api/health exempted at the mount site. */
+  restoreReconciliationMiddleware: (req: Request, res: Response, next: NextFunction) => void;
   /**
    * Sets Cache-Control: no-store on API responses. Authenticated and
    * tenant-scoped payloads (auth/me, profile, tenant feeds) must never sit in
@@ -655,6 +659,14 @@ function applyReadyInvariant(app: BidApplication): void {
     next();
   };
 
+  // Recovery mode after a database restore: refuse all API traffic (except
+  // /api/health, exempted at the mount site) until completed deletions from
+  // the operator's external record have been re-applied and the flag cleared.
+  const restoreReconciliationMiddleware = (req: Request, res: Response, next: NextFunction) => {
+    if (!config.restoreReconciliationRequired) { next(); return; }
+    res.status(503).json({ success: false, error: 'restore_reconciliation_pending' });
+  };
+
   const guardMiddleware = async (req: Request, res: Response, next: NextFunction) => {
     if (!config.authRequired && (!req.auth || (await repos.entitlements.get(req.auth.tenantId))?.planId !== 'test_cohort')) {
       next(); return;
@@ -693,5 +705,5 @@ function applyReadyInvariant(app: BidApplication): void {
     }
   };
 
-  return { config, repos, originCheckMiddleware, sessionMiddleware, tenantWorkMiddleware, apiCacheHeaders, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
+  return { config, repos, originCheckMiddleware, sessionMiddleware, tenantWorkMiddleware, apiCacheHeaders, restoreReconciliationMiddleware, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
 }

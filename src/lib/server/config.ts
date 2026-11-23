@@ -63,6 +63,14 @@ export interface FoundationConfig {
   authRequired: boolean;
   /** OFF until durable deletion/restore reconciliation is implemented and reviewed. */
   accountDeletionEnabled: boolean;
+  /** Operator recovery mode (RESTORE_RECONCILIATION=required): set when the app
+   *  is started against a RESTORED database, before reopening access. Every API
+   *  request except /api/health is refused with 503 restore_reconciliation_pending
+   *  until the operator re-applies the external deletion record (see
+   *  scripts/reconcile-restored-deletions.ts) and restarts without the flag.
+   *  This is deliberately operator-driven: a restore cannot be reliably
+   *  auto-detected from inside the database that was restored. */
+  restoreReconciliationRequired: boolean;
   /** Plan catalog, config-only and provisional. Not exposed as a public offer. */
   plans: Plan[];
   /** Brute-force throttle for auth endpoints. */
@@ -162,6 +170,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FoundationConf
     betaCampaign: env.BETA_CAMPAIGN_JSON ? JSON.parse(env.BETA_CAMPAIGN_JSON) : undefined,
     authRequired: env.AUTH_REQUIRED === 'true',
     accountDeletionEnabled: env.ACCOUNT_DELETION_ENABLED === 'true',
+    restoreReconciliationRequired: env.RESTORE_RECONCILIATION === 'required',
     plans: PLANS,
     authRateLimit: { maxAttempts: Number(env.AUTH_RATE_LIMIT_MAX || 10), windowMs: Number(env.AUTH_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000) },
     sessionTtlHours: Number(env.SESSION_TTL_HOURS || 24 * 7),

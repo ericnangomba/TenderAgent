@@ -31,6 +31,12 @@ export async function startTestApp(configOverrides: Partial<FoundationConfig> = 
   const foundation = createFoundation({ config, repos, providers: [new MockBillingProvider(TEST_SECRET)], eraseEphemeral, requestLeaseMs });
 
   const app = express();
+  // Same mount order as server.ts: reconciliation gate first, health exempt.
+  app.use((req, res, next) => {
+    if (req.path === '/api/health') { next(); return; }
+    foundation.restoreReconciliationMiddleware(req, res, next);
+  });
+  app.get('/api/health', (_req, res) => res.json({ success: true, restoreReconciliation: foundation.config.restoreReconciliationRequired ? 'required' : 'off' }));
   app.use('/api/billing/webhook', foundation.webhookRouter);
   app.use(express.json());
   app.use(foundation.originCheckMiddleware);
