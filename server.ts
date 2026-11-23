@@ -38,6 +38,16 @@ const foundation = createFoundation({ config: foundationConfig, repos: await cre
 const directBetaActive = await activateApprovedBetaAccounts(foundation.repos, foundation.config);
 if (foundation.config.betaCampaign?.directAccounts?.length) console.log(`[beta] ${directBetaActive} approved account(s) confirmed active.`);
 
+// Expired-session housekeeping: expired sessions are already rejected on use;
+// this only removes abandoned rows. No access, content or retention change.
+if (foundation.repos.sessions.pruneExpired) {
+  const pruneExpiredSessions = () => foundation.repos.sessions.pruneExpired!(new Date())
+    .then((removed) => { if (removed) console.log(`[foundation] Removed ${removed} expired session row(s).`); })
+    .catch(() => console.error('[foundation] Expired-session housekeeping failed; will retry on schedule.'));
+  void pruneExpiredSessions();
+  setInterval(pruneExpiredSessions, 6 * 60 * 60 * 1000).unref();
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -84,6 +94,13 @@ app.use((_req: Request, res: Response, next: () => void) => {
 });
 
 // Billing webhooks need the raw body for HMAC signature verification - mount before JSON parsing
+// Restore-reconciliation gate first: when the operator starts the app against
+// a restored database, everything under /api except /api/health is refused
+// until the external deletion record has been re-applied.
+app.use((req: Request, res: Response, next: () => void) => {
+  if (req.path === '/api/health') { next(); return; }
+  foundation.restoreReconciliationMiddleware(req, res, next);
+});
 app.use('/api/billing/webhook', foundation.webhookRouter);
 
 // Allow large payloads for PDF ingestion and multi-page documents
@@ -298,6 +315,7 @@ app.get('/api/health', (req: Request, res: Response) => {
     authRequired: foundation.config.authRequired,
     profileFieldEncryption: fieldEncryptionEnabled(foundation.config.profileFieldKey) ? 'on' : 'off',
     store: foundation.config.store,
+    restoreReconciliation: foundation.config.restoreReconciliationRequired ? 'required' : 'off',
     privacyNote: DOCUMENT_REDACTION_NOTICE,
     sampleTendersLoaded: SAMPLE_TENDERS.length
   });
