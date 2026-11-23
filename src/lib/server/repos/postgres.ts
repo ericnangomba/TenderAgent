@@ -12,7 +12,7 @@ import { Pool } from 'pg';
 import { createPostgresPilot } from './postgresPilot';
 import { AccountDeletionError } from '../accountLifecycle';
 import type {
-  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile,
+  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile, DeletionLedgerEntry,
 } from './types';
 import type { BidApplication } from '../readiness';
 
@@ -126,7 +126,10 @@ export async function connectPostgres(uri: string, enableDeletionConstraints = f
   const pool = new Pool({ connectionString: uri, max: 5, ssl, connectionTimeoutMillis: 15000 });
   try {
     await ensurePostgresSchema(pool);
-    if (enableDeletionConstraints) await ensureTenantForeignKeys(pool);
+    if (enableDeletionConstraints) {
+      await ensureTenantForeignKeys(pool);
+      await ensureDeletionLedgerTable(pool);
+    }
     return pool;
   } catch {
     try { await pool.end(); } catch { /* preserve the sanitized error */ }
@@ -149,6 +152,18 @@ export async function ensureTenantForeignKeys(pool: PoolLike): Promise<void> {
   }
 }
 
+/** In-database record of completed erasures: tenant ID and time only, never
+ *  customer content. Created only in deletion-enabled startup so the default
+ *  production schema is unchanged. A restore to a pre-deletion point loses
+ *  these rows together with the deletions themselves, which is why the
+ *  operator also keeps an external copy for reconciliation. */
+export async function ensureDeletionLedgerTable(pool: PoolLike): Promise<void> {
+  await pool.query(`CREATE TABLE IF NOT EXISTS foundation_deletion_ledger (
+  tenant_id text PRIMARY KEY,
+  erased_at timestamptz NOT NULL
+)`);
+}
+
 interface DeletionClient extends PoolLike { release(error?: boolean): void; }
 interface DeletionPool extends PoolLike { connect(): Promise<DeletionClient>; }
 
@@ -168,7 +183,9 @@ export async function erasePostgresTenant(pool: DeletionPool, tenantId: string):
       AND ((provider_name IS NOT NULL AND provider_name NOT IN ('mock','operator_comp')) OR (provider_name IS NULL AND provider_subscription_ref IS NOT NULL))
       UNION ALL SELECT 1 FROM foundation_billing_events WHERE tenant_id=$1 AND provider NOT IN ('mock','operator_comp')`, [tenantId]);
     if (external.rows.length) throw new AccountDeletionError('billing_resolution_required');
+    // Record the completed erasure in the same transaction, then delete.
     // FK ON DELETE CASCADE covers every foundation table and prevents resurrection.
+    await client.query('INSERT INTO foundation_deletion_ledger (tenant_id, erased_at) VALUES ($1, now()) ON CONFLICT (tenant_id) DO NOTHING', [tenantId]);
     await client.query('DELETE FROM foundation_tenants WHERE id=$1', [tenantId]);
     committing = true;
     await client.query('COMMIT');
@@ -225,6 +242,12 @@ export function createPostgresRepos(pool: PoolLike, tenantConstraintsReady = fal
     pilot: typeof (pool as any).connect === 'function' ? createPostgresPilot(pool as any) : undefined,
     accountDeletion: tenantConstraintsReady && typeof (pool as any).connect === 'function' ? {
       erase: (tenantId: string) => erasePostgresTenant(pool as DeletionPool, tenantId),
+    } : undefined,
+    deletionLedger: tenantConstraintsReady ? {
+      async list(): Promise<DeletionLedgerEntry[]> {
+        const r = await pool.query('SELECT tenant_id, erased_at FROM foundation_deletion_ledger ORDER BY erased_at');
+        return r.rows.map((row: any) => ({ tenantId: row.tenant_id, erasedAt: new Date(row.erased_at) }));
+      },
     } : undefined,
     beta: {
       async redeem(e) {
@@ -295,6 +318,10 @@ export function createPostgresRepos(pool: PoolLike, tenantConstraintsReady = fal
       },
       async delete(id: string) {
         await pool.query('DELETE FROM foundation_sessions WHERE id = $1', [id]);
+      },
+      async pruneExpired(now: Date) {
+        const r = await pool.query('DELETE FROM foundation_sessions WHERE expires_at < $1', [now]);
+        return r.rowCount ?? 0;
       },
     },
     entitlements: {
