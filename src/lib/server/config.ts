@@ -115,6 +115,9 @@ export interface FoundationConfig {
    * into the deployment environment to grant access.
    */
   adminUserIds: string[];
+  /** Enforce TOTP MFA on admin routes (owner requirement). Default on;
+   *  ADMIN_MFA_ENFORCED=false is the operator escape hatch for recovery. */
+  adminMfaEnforced: boolean;
   /** AES-256-GCM key source for sensitive profile fields at rest (empty = off, reported in /api/health). */
   profileFieldKey: string;
 }
@@ -184,6 +187,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FoundationConf
     publicOrigin: env.PUBLIC_ORIGIN || '',
     trustProxy: env.TRUST_PROXY === undefined ? false : (env.TRUST_PROXY === 'false' ? false : env.TRUST_PROXY || true),
     adminUserIds: (env.ADMIN_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean),
+    adminMfaEnforced: env.ADMIN_MFA_ENFORCED !== 'false',
     profileFieldKey: env.PROFILE_FIELD_KEY || '',
   };
 }
