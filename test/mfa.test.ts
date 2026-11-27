@@ -273,3 +273,39 @@ test('re-enrollment blocked even when the encryption key is unavailable', async 
     await stopTestApp(keyed);
   }
 });
+
+test('enrollment fails closed when the field encryption key is missing: nothing persisted, no plaintext', async () => {
+  const keyless = await startTestApp({ adminMfaEnforced: true, profileFieldKey: '', authRateLimit: { maxAttempts: 500, windowMs: 60000 } });
+  try {
+    const { cookie, userId } = await signup(keyless.baseUrl, 'keyless-admin@example.invalid');
+    keyless.foundation.config.adminUserIds.push(userId);
+    const start = await fetch(`${keyless.baseUrl}/api/auth/mfa/enroll/start`, { method: 'POST', headers: { cookie } });
+    assert.equal(start.status, 500, 'enrollment refused without an encryption key');
+    const rec = await keyless.foundation.repos.mfa.get(userId);
+    assert.equal(rec, null, 'no MFA row may be persisted when the key is missing');
+  } finally {
+    await stopTestApp(keyless);
+  }
+});
+
+test('stored TOTP secret is encrypted at rest and verification fails closed with a wrong key', async () => {
+  const { cookie, userId } = await signup(t.baseUrl, 'enc-check@example.invalid');
+  t.foundation.config.adminUserIds.push(userId);
+  const start = await post('/api/auth/mfa/enroll/start', cookie, {});
+  assert.equal(start.status, 200);
+  const manualKey: string = start.json.manualKey;
+  const rec = await t.foundation.repos.mfa.get(userId);
+  assert.ok(rec, 'pending record stored');
+  assert.ok(rec.secretEnc.startsWith('enc:'), 'secret stored under the encryption envelope');
+  assert.ok(!rec.secretEnc.includes(manualKey), 'raw secret never appears in storage');
+  // Wrong key: decryption yields nothing usable and TOTP verification fails
+  // closed rather than comparing against garbage or plaintext.
+  const { verifySecondFactor, confirmEnrollment } = await import('../src/lib/server/mfa');
+  const wrongKey = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+  const code = totpCode(manualKey, Date.now());
+  const viaWrongKey = await confirmEnrollment(t.foundation.repos, wrongKey, userId, code);
+  assert.equal(viaWrongKey, null, 'confirm with the wrong key fails closed');
+  const verifyWrong = await verifySecondFactor(t.foundation.repos, wrongKey, userId, code);
+  assert.equal(verifyWrong.ok, false);
+  assert.equal(verifyWrong.via, null);
+});
