@@ -38,6 +38,20 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Required fields are checked here (the form opts out of native browser
+    // validation, which silently blocked saves on phones) so a missing field
+    // is named in an inline error instead of failing silently.
+    const missing: string[] = [];
+    if (!formData.companyName?.trim()) missing.push('registered company name');
+    if (!formData.registrationNumber?.trim()) missing.push('CIPC registration number');
+    if (!formData.csdNumber?.trim()) missing.push('CSD registration number (MAAA...)');
+    if (!userProfile.taxComplianceStatusPinUnavailable && !formData.taxComplianceStatusPin?.trim()) missing.push('SARS Tax Compliance Status PIN');
+    if (!formData.contactEmail?.trim()) missing.push('contact email');
+    if (!formData.contactPhone?.trim()) missing.push('contact phone');
+    if (missing.length > 0) {
+      setSaveError(`Please complete the required fields: ${missing.join(', ')}.`);
+      return;
+    }
     setIsSaving(true);
     setSaveSuccess(false);
 
@@ -111,7 +125,7 @@ export const ProfileVault: React.FC<ProfileVaultProps> = ({
           <span>Your saved profile could not be loaded - this needs a connection. The empty fields below are NOT your saved details, and saving is paused so nothing gets overwritten.</span>
         </div>
       )}
-      <form onSubmit={handleSave} className="space-y-6">
+      <form onSubmit={handleSave} noValidate className="space-y-6">
       <fieldset disabled={unavailable} className="space-y-6 disabled:opacity-60">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
