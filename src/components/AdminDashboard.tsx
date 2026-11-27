@@ -18,9 +18,9 @@ interface Health {
 }
 
 /**
- * Operator dashboard: platform statistics and private beta administration.
+ * Operator dashboard: platform statistics and the concluded pilot's record.
  * API controls from /api/admin/*
- * are server-enforced requireAdmin. Only the beta panel lists accounts.
+ * are server-enforced requireAdmin. Only the pilot record lists accounts.
  */
 export const AdminDashboard: React.FC = () => {
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -48,7 +48,7 @@ export const AdminDashboard: React.FC = () => {
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h2 className="font-display text-2xl font-semibold text-[#14201C]">Operations dashboard</h2>
-        <p className="text-sm text-stone-500 mt-1">Manage registered accounts, beta access, usage and notifications. Company and bidder-profile setup are not required.</p>
+        <p className="text-sm text-stone-500 mt-1">Manage registered accounts, usage and notifications, and review the concluded pilot record. Company and bidder-profile setup are not required.</p>
       </div>
 
       {error && (
