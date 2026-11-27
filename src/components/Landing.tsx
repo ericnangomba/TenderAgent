@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AuthCard, AuthState } from './AuthCard';
+import { SampleAnalysisPreview } from './SampleAnalysisPreview';
+import { PrivacyNotice } from './PrivacyNotice';
 import tenderAgentLogo from '../assets/tenderagentlogo-trimmed.png';
 
 interface Props {
@@ -28,6 +30,16 @@ const features = [
  * claims.
  */
 export const Landing: React.FC<Props> = ({ onAuthChange }) => {
+  // Hash-routed public pages (#privacy) render in place of the landing hero.
+  const [hash, setHash] = useState(() => window.location.hash);
+  useEffect(() => {
+    const onHash = () => setHash(window.location.hash);
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  if (hash === '#privacy') {
+    return <PrivacyNotice onBack={() => { window.location.hash = ''; }} />;
+  }
   return (
     <div className="min-h-screen pb-28 bg-[#FBFAF7] text-[#14201C] antialiased">
       {/* Top bar */}
@@ -89,10 +101,15 @@ export const Landing: React.FC<Props> = ({ onAuthChange }) => {
         </section>
       </main>
 
+      <SampleAnalysisPreview />
+
       <footer className="border-t border-stone-200">
         <div className="max-w-6xl mx-auto px-6 py-6 flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
           <span className="text-xs text-stone-500">TenderAgent &middot; Built for South African SMEs</span>
-          <span className="text-xs text-stone-400">Preferential Procurement Regulations, 2022</span>
+          <span className="text-xs text-stone-400">
+            <a href="#privacy" className="hover:text-stone-600 underline underline-offset-2">Privacy &amp; data handling</a>
+            {' '}&middot; Preferential Procurement Regulations, 2022
+          </span>
         </div>
       </footer>
     </div>
