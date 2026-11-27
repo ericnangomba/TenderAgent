@@ -30,6 +30,49 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
   const [accountDeleteError, setAccountDeleteError] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [profileDelete, setProfileDelete] = useState<'idle' | 'confirm' | 'busy' | 'done' | 'error'>('idle');
+  // Admin two-factor enrollment state.
+  const [mfa, setMfa] = useState<{ enrolled: boolean; recoveryCodesLeft: number } | null>(null);
+  const [mfaStart, setMfaStart] = useState<{ otpauthUri: string; manualKey: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaCodes, setMfaCodes] = useState<string[] | null>(null);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaBusy, setMfaBusy] = useState(false);
+
+  React.useEffect(() => {
+    if (!auth?.isAdmin) { setMfa(null); return; }
+    fetch('/api/auth/mfa/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.success && setMfa({ enrolled: d.enrolled, recoveryCodesLeft: d.recoveryCodesLeft }))
+      .catch(() => setMfa(null));
+  }, [auth]);
+
+  const mfaBegin = async () => {
+    setMfaBusy(true); setMfaError(null);
+    try {
+      const r = await fetch('/api/auth/mfa/enroll/start', { method: 'POST' });
+      const d = await r.json();
+      if (r.ok && d?.success) setMfaStart({ otpauthUri: d.otpauthUri, manualKey: d.manualKey });
+      else setMfaError(d?.error === 'mfa_verification_required' ? 'Sign in again with your authenticator before changing two-factor settings.' : (d?.error || 'Could not start setup.'));
+    } catch { setMfaError('Could not reach the server.'); }
+    finally { setMfaBusy(false); }
+  };
+
+  const mfaConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMfaBusy(true); setMfaError(null);
+    try {
+      const r = await fetch('/api/auth/mfa/enroll/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: mfaCode.trim() }) });
+      const d = await r.json();
+      if (r.ok && d?.success) {
+        setMfaCodes(d.recoveryCodes);
+        setMfaStart(null);
+        setMfa({ enrolled: true, recoveryCodesLeft: d.recoveryCodes.length });
+      } else {
+        setMfaError(d?.error === 'invalid_code' ? 'That code did not match. Check the time on your authenticator device and try again.' : (d?.error || 'Setup failed.'));
+      }
+    } catch { setMfaError('Could not reach the server.'); }
+    finally { setMfaBusy(false); }
+  };
 
   React.useEffect(() => {
     if (!auth) {
@@ -157,14 +200,69 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
   const statusLabel: Record<string, string> = {
     none: 'No active subscription', active: 'Subscription active', past_due: 'Payment outstanding', cancelled: 'Subscription cancelled',
   };
-  if (operationsMode) return <section className={card}>
+  const mfaCard = auth.isAdmin ? (
+
+  <div className={card}>
+    <h3 className={`text-sm font-bold uppercase mb-3 flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+      <ShieldCheck className="w-4 h-4 text-emerald-600" /> Two-factor sign-in (admin)
+    </h3>
+    {mfa?.enrolled && !mfaCodes ? (
+      <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        Two-factor sign-in is <strong>on</strong> for this admin account. Recovery codes remaining: {mfa.recoveryCodesLeft}.
+        {mfa.recoveryCodesLeft <= 2 ? ' Re-enroll to generate fresh recovery codes.' : ''}
+      </p>
+    ) : !mfaStart && !mfaCodes ? (
+      <>
+        <p className={`text-xs leading-relaxed mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Admin tools stay locked until two-factor is set up. You will need an authenticator app (for example Google Authenticator, Microsoft Authenticator or 1Password) on your phone.
+        </p>
+        <button onClick={mfaBegin} disabled={mfaBusy} className="text-xs px-3 py-2 rounded-lg bg-emerald-700 text-white font-semibold disabled:opacity-60">
+          {mfaBusy ? 'Preparing...' : 'Set up two-factor sign-in'}
+        </button>
+      </>
+    ) : null}
+    {mfaStart && (
+      <form onSubmit={mfaConfirm} className="space-y-3">
+        <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Add this account to your authenticator app, then enter the 6-digit code it shows:
+        </p>
+        <div className={`text-xs break-all rounded-lg p-3 font-mono ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-50 text-slate-700'}`}>
+          <div className="mb-1"><strong>Key:</strong> {mfaStart.manualKey}</div>
+          <div className="break-all"><strong>Link:</strong> {mfaStart.otpauthUri}</div>
+        </div>
+        <label className="block text-xs">
+          6-digit code
+          <input required inputMode="numeric" autoComplete="one-time-code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} className="block w-full mt-1 p-2 rounded border bg-white text-slate-900" placeholder="123456" />
+        </label>
+        <div className="flex gap-3">
+          <button type="submit" disabled={mfaBusy} className="text-xs px-3 py-2 rounded-lg bg-emerald-700 text-white font-semibold disabled:opacity-60">{mfaBusy ? 'Checking...' : 'Confirm and activate'}</button>
+          <button type="button" disabled={mfaBusy} className="text-xs px-3 py-2 rounded-lg border" onClick={() => { setMfaStart(null); setMfaCode(''); setMfaError(null); }}>Cancel</button>
+        </div>
+      </form>
+    )}
+    {mfaCodes && (
+      <div>
+        <p className={`text-xs font-semibold mb-2 ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>
+          Two-factor is now ON. Save these one-time recovery codes somewhere safe - they are shown only once and each works once if you lose your phone.
+        </p>
+        <div className={`grid grid-cols-2 gap-1 text-xs font-mono rounded-lg p-3 mb-2 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-50 text-slate-700'}`}>
+          {mfaCodes.map((c) => <div key={c}>{c}</div>)}
+        </div>
+        <button className="text-xs px-3 py-2 rounded-lg border" onClick={() => setMfaCodes(null)}>I have saved them</button>
+      </div>
+    )}
+    {mfaError && <p role="alert" className={`text-xs mt-3 ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>{mfaError}</p>}
+  </div>
+  ) : null;
+
+  if (operationsMode) return <div className="max-w-2xl mx-auto space-y-6"><section className={card}>
     <h2 className="font-display text-xl font-semibold">Operator account</h2>
     <p className="text-sm mt-3 break-words">{auth?.email}</p>
     <p className="text-sm text-stone-600 mt-2">Administrator access is assigned to your account ID. No company registration, bidder profile or paid subscription is required to use operations controls.</p>
     <p className="text-xs mt-3 break-all text-stone-500">Account ID {auth?.userId}</p>
     <button onClick={logout} className="mt-4 rounded-lg border px-4 py-2 text-sm">Sign out</button>
     {logoutError && <p role="alert" className="text-red-700 text-sm mt-3">{logoutError}</p>}
-  </section>;
+  </section>{mfaCard}</div>;
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className={card}>
@@ -303,6 +401,7 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           </div>
         )}
       </div>
+      {mfaCard}
       {info?.accountDeletionAvailable && (
         <div className={card}>
           <h3 className={`text-sm font-bold uppercase mb-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Delete account</h3>
