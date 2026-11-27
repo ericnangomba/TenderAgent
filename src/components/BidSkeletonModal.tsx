@@ -6,12 +6,15 @@ import { X, Download, Copy, Check, FileText, AlertTriangle } from 'lucide-react'
 interface BidSkeletonModalProps {
   skeleton: IBidResponseSkeleton | null;
   onClose: () => void;
+  /** Fired after the .doc download has actually been triggered. */
+  onDownloaded?: () => void;
   isDarkMode?: boolean;
 }
 
 export const BidSkeletonModal: React.FC<BidSkeletonModalProps> = ({ 
   skeleton, 
   onClose,
+  onDownloaded,
   isDarkMode = false
 }) => {
   const [activeSection, setActiveSection] = useState<number>(0);
@@ -36,6 +39,7 @@ export const BidSkeletonModal: React.FC<BidSkeletonModalProps> = ({
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    onDownloaded?.();
   };
 
   return (
