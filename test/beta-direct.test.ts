@@ -55,7 +55,11 @@ test('idempotent and concurrent grant, fixed expiry, total20 across month, no pa
   assert.equal(claims.filter(x => x.allowed).length, 20);
   assert.equal((await authorizeAndConsume(repos, config, approved.tenantId, 'analysis', new Date('2026-12-01'))).allowed, false);
   assert.equal((await checkAccess(repos, config, approved.tenantId, 'serpapi', start)).allowed, false);
-  assert.equal((await checkAccess(repos, config, approved.tenantId, 'analysis', end)).allowed, false);
+  // At the exact window end the pilot bucket is closed for good, but the
+  // freemium baseline applies from then on, keyed by calendar month.
+  const atEnd = await checkAccess(repos, config, approved.tenantId, 'analysis', end);
+  assert.equal(atEnd.allowed, true);
+  assert.equal(atEnd.periodKey, '2026-12');
   await activateApprovedBetaAccounts(repos, config, new Date(+start + 1000));
   assert.deepEqual(await repos.entitlements.get(approved.tenantId), before);
   assert.equal((await repos.usage.get(approved.tenantId, 'beta_pilot_v1')).analyses, 20);
