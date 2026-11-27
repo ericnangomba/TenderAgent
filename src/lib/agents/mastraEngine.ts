@@ -106,7 +106,11 @@ async function extractComplianceWithGemma(
   customConfig?: Partial<IOpenLlmConfig>,
   allowCloudLlm = false
 ): Promise<IModelExtractionResult> {
-  // Server-resolved config only: never trust client-supplied baseUrl (SSRF guard).\n  const safeCustom = customConfig ? { provider: customConfig.provider, modelId: customConfig.modelId } : {};\n  const config = { ...activeLlmConfig, ...safeCustom, baseUrl: activeLlmConfig.baseUrl };
+  // Server-resolved config only: never trust client-supplied baseUrl (SSRF guard).
+  const safeCustom: Partial<IOpenLlmConfig> = {};
+  if (customConfig?.provider) safeCustom.provider = customConfig.provider;
+  if (customConfig?.modelId) safeCustom.modelId = customConfig.modelId;
+  const config = { ...activeLlmConfig, ...safeCustom, baseUrl: activeLlmConfig.baseUrl };
   const failoverLogs: string[] = [];
   let failoverOccurred = false;
 
