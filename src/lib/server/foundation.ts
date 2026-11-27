@@ -445,7 +445,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
         entitlement: ent
           ? { ...ent, effectiveStatus: entitlementStatus(ent, config, now) }
           : { effectiveStatus: 'none' },
-        freemium: onFreemium ? { includedAnalyses: FREEMIUM_INCLUDED_ANALYSES } : null,
+        freemium: onFreemium ? { includedAnalyses: FREEMIUM_INCLUDED_ANALYSES, resetsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString() } : null,
         usage,
         // Own plan's usage allowances only. No plan catalog or pricing here:
         // the R250/60/30 figures are provisional config, not a public offer.
