@@ -18,14 +18,15 @@ interface Health {
 }
 
 /**
- * Operator dashboard: platform statistics and private beta administration.
+ * Operator dashboard: platform statistics and the concluded pilot's record.
  * API controls from /api/admin/*
- * are server-enforced requireAdmin. Only the beta panel lists accounts.
+ * are server-enforced requireAdmin. Only the pilot record lists accounts.
  */
-export const AdminDashboard: React.FC = () => {
+export const AdminDashboard: React.FC<{ onOpenAccount?: () => void }> = ({ onOpenAccount }) => {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mfaSetupNeeded, setMfaSetupNeeded] = useState(false);
 
   useEffect(() => {
     fetch('/api/admin/overview')
@@ -35,6 +36,10 @@ export const AdminDashboard: React.FC = () => {
     fetch('/api/health')
       .then((r) => r.json())
       .then(setHealth)
+      .catch(() => undefined);
+    fetch('/api/auth/mfa/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setMfaSetupNeeded(Boolean(d?.required && !d?.enrolled)))
       .catch(() => undefined);
   }, []);
 
@@ -48,9 +53,19 @@ export const AdminDashboard: React.FC = () => {
     <div className="max-w-4xl mx-auto space-y-6">
       <div>
         <h2 className="font-display text-2xl font-semibold text-[#14201C]">Operations dashboard</h2>
-        <p className="text-sm text-stone-500 mt-1">Manage registered accounts, beta access, usage and notifications. Company and bidder-profile setup are not required.</p>
+        <p className="text-sm text-stone-500 mt-1">Manage registered accounts, usage and notifications, and review the concluded pilot record. Company and bidder-profile setup are not required.</p>
       </div>
 
+      {mfaSetupNeeded && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-lg p-4 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+          <div>
+            <strong>Two-factor sign-in is not set up.</strong> Operations controls stay locked until you add an authenticator to this admin account.
+          </div>
+          {onOpenAccount && (
+            <button onClick={onOpenAccount} className="shrink-0 rounded-lg bg-amber-700 text-white text-xs font-semibold px-3 py-2">Set up two-factor sign-in</button>
+          )}
+        </div>
+      )}
       {error && (
         <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">Could not load overview: {error}</div>
       )}
