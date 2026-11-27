@@ -733,4 +733,4 @@ function applyReadyInvariant(app: BidApplication): void {
   };
 
   return { config, repos, originCheckMiddleware, sessionMiddleware, tenantWorkMiddleware, apiCacheHeaders, restoreReconciliationMiddleware, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
-      }
+}
