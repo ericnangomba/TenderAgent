@@ -198,7 +198,7 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           </p>
         )}
         <p className="text-xs mt-3 text-slate-500">Real payments are not connected. No card is collected and no paid subscription starts.</p>
-        {(info?.freemium || info?.entitlement?.planId === 'test_cohort') && <p className="text-xs mt-2 text-slate-500">Public or synthetic documents only. Rule-based preview, not a language model. No paid searches. Check the source tender before relying on results.</p>}
+        {(info?.freemium || info?.entitlement?.planId === 'test_cohort') && <p className="text-xs mt-2 text-slate-500">Public or synthetic documents only. No paid searches. The exact analysis engine the server used is shown on every result. Check the source tender before relying on results.</p>}
         {(info?.freemium || info?.allowances) && info && (
           <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
             <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Usage this month</p>
