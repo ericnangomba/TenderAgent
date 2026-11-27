@@ -10,7 +10,7 @@ import type { FoundationRepos } from './repos/types';
 import type { GatedAction } from './entitlement';
 import { createMemoryRepos } from './repos/memory';
 import { createAuthRouter, createSessionMiddleware } from './auth';
-import { authorizeAndConsume, entitlementStatus, currentPeriodKey, usagePeriodKey, type AccessDecision } from './entitlement';
+import { authorizeAndConsume, entitlementStatus, currentPeriodKey, usagePeriodKey, freemiumBaselineApplies, FREEMIUM_INCLUDED_ANALYSES, type AccessDecision } from './entitlement';
 import { createWebhookRouter, MockBillingProvider, type BillingProvider } from './billing';
 import { evaluateReadiness, seedRequirementsForTender, type BidApplication, type Requirement } from './readiness';
 import { randomBytes, createHash } from 'node:crypto';
@@ -429,7 +429,10 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     }
     const now = new Date();
     const ent = await repos.entitlements.get(req.auth.tenantId);
-    const usage = await repos.usage.get(req.auth.tenantId, usagePeriodKey(ent, now));
+    // Freemium baseline users (no subscription, or a lapsed beta cohort row)
+    // consume calendar-month usage, never the beta campaign window key.
+    const onFreemium = freemiumBaselineApplies(ent, config, now);
+    const usage = await repos.usage.get(req.auth.tenantId, onFreemium ? currentPeriodKey(now) : usagePeriodKey(ent, now));
     const plan = getPlan(ent?.planId, config.plans);
     res.json({
       success: true,
@@ -442,6 +445,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
         entitlement: ent
           ? { ...ent, effectiveStatus: entitlementStatus(ent, config, now) }
           : { effectiveStatus: 'none' },
+        freemium: onFreemium ? { includedAnalyses: FREEMIUM_INCLUDED_ANALYSES } : null,
         usage,
         // Own plan's usage allowances only. No plan catalog or pricing here:
         // the R250/60/30 figures are provisional config, not a public offer.
