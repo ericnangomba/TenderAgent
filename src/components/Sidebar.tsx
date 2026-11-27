@@ -126,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {
         key: 'admin' as TabKey,
         label: 'Operations dashboard',
-        description: 'Users, beta access & notifications',
+        description: 'Users, access & notifications',
         icon: LayoutDashboard
       },
       {
