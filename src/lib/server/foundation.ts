@@ -10,8 +10,8 @@ import type { FoundationRepos } from './repos/types';
 import type { GatedAction } from './entitlement';
 import { createMemoryRepos } from './repos/memory';
 import { createAuthRouter, createSessionMiddleware } from './auth';
-import { authorizeAndConsume, entitlementStatus, currentPeriodKey, usagePeriodKey, type AccessDecision } from './entitlement';
-import { createWebhookRouter, MockBillingProvider, type BillingProvider } from './billing';
+import { authorizeAndConsume, entitlementStatus, currentPeriodKey, usagePeriodKey, freemiumBaselineApplies, FREEMIUM_INCLUDED_ANALYSES, type AccessDecision } from './entitlement';
+import { createWebhookRouter, MockBillingProvider, PaystackBillingProvider, type BillingProvider } from './billing';
 import { evaluateReadiness, seedRequirementsForTender, type BidApplication, type Requirement } from './readiness';
 import { randomBytes, createHash } from 'node:crypto';
 import { AccountDeletionError, TenantWorkCoordinator } from './accountLifecycle';
@@ -98,6 +98,9 @@ const GUARDED_ROUTES: Array<{ method: string; path: string; action: GatedAction 
  * disabled entirely (fail closed).
  */
 function defaultBillingProviders(config: FoundationConfig): BillingProvider[] {
+  // Real provider first: when a Paystack secret is configured its webhook is
+  // the only billing source; the mock stays a development tool.
+  if (config.paystackSecretKey) return [new PaystackBillingProvider(config.paystackSecretKey, config.paystackPlanCode)];
   if (config.mockBillingSecret) return [new MockBillingProvider(config.mockBillingSecret)];
   if (process.env.NODE_ENV === 'production') {
     console.warn('[foundation] No billing webhook secret configured - mock billing provider DISABLED in production.');
@@ -267,6 +270,13 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
       res.status(403).json({ success: false, error: 'admin_required' });
       return;
     }
+    // Admin MFA enforcement (owner requirement): admin routes need a session
+    // whose second factor was verified - enrollment plus a fresh verified
+    // sign-in both set this. A pending-MFA session never reaches req.auth.
+    if (config.adminMfaEnforced && req.auth.mfaVerified !== true) {
+      res.status(403).json({ success: false, error: 'mfa_verification_required' });
+      return;
+    }
     next();
   };
 
@@ -429,7 +439,10 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     }
     const now = new Date();
     const ent = await repos.entitlements.get(req.auth.tenantId);
-    const usage = await repos.usage.get(req.auth.tenantId, usagePeriodKey(ent, now));
+    // Freemium baseline users (no subscription, or a lapsed beta cohort row)
+    // consume calendar-month usage, never the beta campaign window key.
+    const onFreemium = freemiumBaselineApplies(ent, config, now);
+    const usage = await repos.usage.get(req.auth.tenantId, onFreemium ? currentPeriodKey(now) : usagePeriodKey(ent, now));
     const plan = getPlan(ent?.planId, config.plans);
     res.json({
       success: true,
@@ -442,6 +455,7 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
         entitlement: ent
           ? { ...ent, effectiveStatus: entitlementStatus(ent, config, now) }
           : { effectiveStatus: 'none' },
+        freemium: onFreemium ? { includedAnalyses: FREEMIUM_INCLUDED_ANALYSES, resetsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString() } : null,
         usage,
         // Own plan's usage allowances only. No plan catalog or pricing here:
         // the R250/60/30 figures are provisional config, not a public offer.
