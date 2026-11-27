@@ -26,6 +26,9 @@ export const AuthCard: React.FC<Props> = ({ onAuthChange, initialMode = 'login' 
   const [companyName, setCompanyName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Second-factor step after a password-correct admin login.
+  const [mfaStep, setMfaStep] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
 
   const input = 'w-full px-4 py-2.5 rounded-lg border border-stone-300 bg-white text-sm text-stone-900 outline-none transition-colors focus:border-emerald-700 placeholder:text-stone-400';
   const label = 'block text-xs font-semibold uppercase tracking-wider mb-1.5 text-stone-500';
@@ -50,6 +53,42 @@ export const AuthCard: React.FC<Props> = ({ onAuthChange, initialMode = 'login' 
         );
         return;
       }
+      if (data.mfaRequired) {
+        // Password accepted; the server issued a pending session. Ask for the
+        // authenticator (or recovery) code before anything unlocks.
+        setMfaStep(true);
+        setError(null);
+        return;
+      }
+      onAuthChange({ tenantId: data.tenantId, email: data.email, userId: data.userId, isAdmin: Boolean(data.isAdmin) });
+    } catch {
+      setError('Could not reach the server.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitMfa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/auth/mfa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: mfaCode.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setError(
+          data.error === 'invalid_code' ? 'That code did not match. Check your authenticator or use a recovery code.'
+          : data.error === 'mfa_pending_expired' ? 'The sign-in window expired. Sign in again.'
+          : data.error === 'too_many_attempts' ? 'Too many attempts. Please wait a few minutes and try again.'
+          : data.error || 'Something went wrong.',
+        );
+        if (data.error === 'mfa_pending_expired') setMfaStep(false);
+        return;
+      }
       onAuthChange({ tenantId: data.tenantId, email: data.email, userId: data.userId, isAdmin: Boolean(data.isAdmin) });
     } catch {
       setError('Could not reach the server.');
@@ -60,6 +99,34 @@ export const AuthCard: React.FC<Props> = ({ onAuthChange, initialMode = 'login' 
 
   return (
     <div className="bg-white border border-stone-200 rounded-2xl shadow-[0_18px_50px_-24px_rgba(20,32,28,0.35)] p-6 sm:p-8">
+      {mfaStep ? (
+        <form onSubmit={submitMfa} className="space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-stone-900 mb-1">Two-factor check</h3>
+            <p className="text-xs text-stone-500 mb-3">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>
+            <label className={label}>Authenticator or recovery code</label>
+            <input className={input} required autoFocus inputMode="numeric" autoComplete="one-time-code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} placeholder="123456 or xxxxx-xxxxx" />
+          </div>
+          {error && (
+            <div className="flex items-start gap-2 text-xs rounded-lg p-3 bg-red-50 text-red-700">
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={busy}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-emerald-700 hover:bg-emerald-800 text-white transition-colors disabled:opacity-60"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+            Verify and sign in
+          </button>
+          <button type="button" onClick={() => { setMfaStep(false); setMfaCode(''); setError(null); }} className="w-full text-xs text-stone-500 hover:text-stone-700">
+            Back to sign in
+          </button>
+        </form>
+      ) : (
+      <>
       <div className="flex rounded-lg p-1 mb-6 bg-stone-100">
         {(['login', 'signup'] as const).map((m) => (
           <button
@@ -111,6 +178,8 @@ export const AuthCard: React.FC<Props> = ({ onAuthChange, initialMode = 'login' 
       <p className="text-[11px] leading-relaxed mt-4 text-stone-400">
         Your company profile and tender analyses are tied to your workspace account.
       </p>
+      </>
+      )}
     </div>
   );
 };
