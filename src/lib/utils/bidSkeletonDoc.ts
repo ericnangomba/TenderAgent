@@ -26,7 +26,13 @@ export function buildBidSkeletonDoc(source: IBidResponseSkeleton): string {
   </style>
 </head>
 <body>
-  <h1>Draft Bid Response Framework</h1><p><strong>Not ready for submission.</strong> Use the original tender and its official forms. Verify every field, claim and requirement.</p>
+  <!-- Some HTML-to-document converters (LibreOffice writer_web) silently
+       drop the first text block inside <body>, which used to eat this title.
+       A borderless single-cell table is not affected and renders identically
+       in Word, so the title always survives. -->
+  <table style="border:none; border-collapse:collapse; margin:0; width:100%"><tr><td style="border:none; padding:0">
+  <h1>Draft Bid Response Framework</h1>
+  </td></tr></table><p><strong>Not ready for submission.</strong> Use the original tender and its official forms. Verify every field, claim and requirement.</p>
   <p><strong>Tender Reference:</strong> ${skeleton.tenderReference}</p>
   <p><strong>Title:</strong> ${skeleton.tenderTitle}</p>
   <p><strong>Issuing Organ of State:</strong> ${skeleton.issuingDepartment}</p>
