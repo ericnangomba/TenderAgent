@@ -267,6 +267,13 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
       res.status(403).json({ success: false, error: 'admin_required' });
       return;
     }
+    // Admin MFA enforcement (owner requirement): admin routes need a session
+    // whose second factor was verified - enrollment plus a fresh verified
+    // sign-in both set this. A pending-MFA session never reaches req.auth.
+    if (config.adminMfaEnforced && req.auth.mfaVerified !== true) {
+      res.status(403).json({ success: false, error: 'mfa_verification_required' });
+      return;
+    }
     next();
   };
 
