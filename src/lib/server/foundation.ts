@@ -176,8 +176,14 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
     const origin = req.headers.origin;
     if (origin) {
       try {
-        // Exact configured public origin (front-door proxy) or same-host only.
-        if (new URL(origin).host !== req.headers.host && origin !== config.publicOrigin) {
+        const originHost = new URL(origin).host;
+        // Allow same-host requests always. When PUBLIC_ORIGIN is configured
+        // (front-door proxy), also allow that exact origin/host so a proxied
+        // deploy keeps working even if the upstream Host differs.
+        const publicOriginHost = config.publicOrigin ? new URL(config.publicOrigin).host : '';
+        const allowed = originHost === req.headers.host
+          || (config.publicOrigin !== '' && (origin === config.publicOrigin || originHost === publicOriginHost));
+        if (!allowed) {
           res.status(403).json({ success: false, error: 'origin_forbidden' });
           return;
         }
