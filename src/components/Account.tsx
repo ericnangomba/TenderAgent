@@ -187,24 +187,38 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
             : <AlertCircle className={`w-4 h-4 ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`} />}
           <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{info?.freemium ? 'Free plan' : info?.entitlement?.planId === 'test_cohort' ? (status === 'active' ? 'Free access active' : 'Free access ended') : statusLabel[status] || status}</span>
         </div>
-        {info?.entitlement?.currentPeriodEnd && status === 'active' && (
+        {info?.freemium?.resetsAt && (
           <p className={`text-xs mt-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
-            {info.freemium ? 'Free analyses reset monthly' : 'Access ends'} {new Date(info.entitlement.currentPeriodEnd).toLocaleString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
+            Free analyses reset {new Date(info.freemium.resetsAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
+        )}
+        {!info?.freemium && info?.entitlement?.currentPeriodEnd && status === 'active' && (
+          <p className={`text-xs mt-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+            Access ends {new Date(info.entitlement.currentPeriodEnd).toLocaleString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
           </p>
         )}
         <p className="text-xs mt-3 text-slate-500">Real payments are not connected. No card is collected and no paid subscription starts.</p>
         {(info?.freemium || info?.entitlement?.planId === 'test_cohort') && <p className="text-xs mt-2 text-slate-500">Public or synthetic documents only. Rule-based preview, not a language model. No paid searches. Check the source tender before relying on results.</p>}
-        {info?.allowances && (
+        {(info?.freemium || info?.allowances) && info && (
           <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-            <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>'Usage this month'</p>
+            <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Usage this month</p>
             <div className={`grid grid-cols-2 gap-3 text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
               <div className={`rounded-xl p-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                <div className="text-lg font-bold">{info.usage?.analyses ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.allowances.includedAnalyses}</span></div>
+                <div className="text-lg font-bold">{info.usage?.analyses ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.freemium ? info.freemium.includedAnalyses : info.allowances!.includedAnalyses}</span></div>
                 <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>RFP analyses</div>
               </div>
               <div className={`rounded-xl p-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                <div className="text-lg font-bold">{info.usage?.serpapiLookups ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.allowances.includedSerpapiLookups}</span></div>
-                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Live tender lookups</div>
+                {info.freemium ? (
+                  <>
+                    <div className="text-lg font-bold">0</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Live tender lookups not included on the Free plan</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-lg font-bold">{info.usage?.serpapiLookups ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.allowances!.includedSerpapiLookups}</span></div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Live tender lookups</div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -216,11 +230,17 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           <Trash2 className={`w-5 h-5 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
           <h3 className={`text-sm font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Your data</h3>
         </div>
-        <p className={`text-xs leading-relaxed mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-          Your company profile and bid drafts stay saved until you delete them - there is no automatic expiry.
-          Tender analyses are returned to this browser view without a saved server-side analysis history. Leaving or reloading the view loses that result. Evidence notes you add to a requirement stay saved with that draft until you delete the
-          draft. Bid drafts can be deleted one by one from the Bid Readiness view.
+        <p className={`text-xs leading-relaxed mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Profile and bid drafts stay saved until you delete them. Analyses are not kept on the server after they are returned.
         </p>
+        <details className={`text-xs leading-relaxed mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <summary className="cursor-pointer font-semibold">Exactly what is kept, and what you can delete</summary>
+          <p className="mt-2">
+            Your company profile and bid drafts stay saved until you delete them - there is no automatic expiry.
+            Tender analyses are returned to this browser view without a saved server-side analysis history. Leaving or reloading the view loses that result. Evidence notes you add to a requirement stay saved with that draft until you delete the
+            draft. Bid drafts can be deleted one by one from the Bid Readiness view.
+          </p>
+        </details>
         {profileDelete === 'done' ? (
           <p className={`text-xs font-medium ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>
             Saved company profile deleted.
