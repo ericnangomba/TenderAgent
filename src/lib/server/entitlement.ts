@@ -148,7 +148,15 @@ export async function authorizeAndConsume(
   const ent = await repos.entitlements.get(tenantId);
   const status = entitlementStatus(ent, config, now);
 
-  if (status === 'none') return { allowed: false, reason: 'no_subscription', status };
+  if (status === 'none') {
+    // Freemium: 3 free analyses for accounts without a subscription.
+    if (action !== 'analysis') return { allowed: false, reason: 'no_subscription', status };
+    const usage = await repos.usage.get(tenantId, currentPeriodKey(now));
+    if (usage.analyses >= 3) return { allowed: false, reason: 'freemium_limit_reached', status };
+    const claim = await repos.usage.tryConsume(tenantId, currentPeriodKey(now), 'analyses', 3);
+    if (!claim.allowed) return { allowed: false, reason: 'no_subscription', status };
+    return { allowed: true, status, periodKey: currentPeriodKey(now) };
+  }
   if (status === 'cancelled' || status === 'past_due') {
     return { allowed: false, reason: 'subscription_inactive', status };
   }
@@ -166,12 +174,12 @@ export async function authorizeAndConsume(
 
 export type GatedAction = 'analysis' | 'serpapi';
 
-export interface AccessDecision {
+export type AccessDecision = {
   allowed: boolean;
-  reason?: 'no_subscription' | 'subscription_inactive' | 'plan_limit_reached' | 'unknown_plan';
+  reason?: 'no_subscription' | 'subscription_inactive' | 'plan_limit_reached' | 'unknown_plan' | 'freemium_limit_reached';
   status?: EffectiveStatus;
   periodKey?: string;
-}
+};
 
 export function usagePeriodKey(ent: Entitlement | null, now: Date = new Date()): string {
   return ent?.planId === 'test_cohort' ? 'beta_pilot_v1' : currentPeriodKey(now);
@@ -191,7 +199,13 @@ export async function checkAccess(
   const ent = await repos.entitlements.get(tenantId);
   const status = entitlementStatus(ent, config, now);
 
-  if (status === 'none') return { allowed: false, reason: 'no_subscription', status };
+  if (status === 'none') {
+    // Freemium: 3 free analyses for accounts without a subscription.
+    if (action !== 'analysis') return { allowed: false, reason: 'no_subscription', status };
+    const usage = await repos.usage.get(tenantId, currentPeriodKey(now));
+    if (usage.analyses >= 3) return { allowed: false, reason: 'freemium_limit_reached', status };
+    return { allowed: true, status, periodKey: currentPeriodKey(now) };
+  }
   if (status === 'cancelled' || status === 'past_due') {
     return { allowed: false, reason: 'subscription_inactive', status };
   }
