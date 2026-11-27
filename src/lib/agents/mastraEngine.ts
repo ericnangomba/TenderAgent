@@ -349,7 +349,14 @@ ${rawText.slice(0, 10000)}`;
   else if (/PRASA/i.test(rawText)) department = 'Passenger Rail Agency of South Africa (PRASA)';
   else if (/TRANSNET/i.test(rawText)) department = 'Transnet SOC Ltd';
   else if (/SITA/i.test(rawText)) department = 'State Information Technology Agency (SITA)';
-  else if (/GAUTENG/i.test(rawText)) department = 'Gauteng Provincial Government';
+  else if (/GAUTENG\s+(?:PROVINCIAL|PROVINCE\s+GOVERNMENT|DEPARTMENT)/i.test(rawText)) department = 'Gauteng Provincial Government';
+  // A province mentioned as a place (delivery area, address) is never an
+  // issuer. When no known organ of state is named, take the entity that
+  // "invites bids" if one is stated; otherwise keep the neutral default.
+  if (department === 'Organ of State / Public Entity (South Africa)') {
+    const inviter = rawText.match(/([A-Z][A-Za-z0-9 .&'()-]{2,90}?(?:Municipality|Municipal District|Metro|Department|Authority|Agency|Board|University|College|SOC Ltd))\s+invites\s+(?:bids|tenders)/i);
+    if (inviter) department = inviter[1].replace(/\s+/g, ' ').trim();
+  }
 
   // Province
   let province = 'National / South Africa';
