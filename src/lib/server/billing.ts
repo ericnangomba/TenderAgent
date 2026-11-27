@@ -53,6 +53,70 @@ export class MockBillingProvider implements BillingProvider {
 }
 
 /**
+ * Paystack (paystack.co) provider. Webhook authenticity: HMAC-SHA512 of the
+ * exact raw request bytes with the merchant secret key, hex digest in the
+ * x-paystack-signature header (https://paystack.com/docs/payments/webhooks/).
+ * Event mapping covers the subscription lifecycle TenderAgent needs for the
+ * R250/month plan; anything else is ignored (acked, not applied).
+ * Prepared from Paystack's published docs only - no merchant account exists
+ * yet, so no live payload has been observed; field names come from the docs.
+ */
+export class PaystackBillingProvider implements BillingProvider {
+  name = 'paystack';
+  constructor(private secret: string, private planCode: string) {}
+
+  static sign(secret: string, rawBody: Buffer | string): string {
+    return createHmac('sha512', secret).update(rawBody).digest('hex');
+  }
+
+  verifyAndNormalize(rawBody: Buffer, signatureHeader: string | undefined): NormalizedBillingEvent | null {
+    if (!signatureHeader) return null;
+    const expected = PaystackBillingProvider.sign(this.secret, rawBody);
+    const a = Buffer.from(expected);
+    const b = Buffer.from(signatureHeader);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+    try {
+      const p = JSON.parse(rawBody.toString('utf8'));
+      const event: string = p.event;
+      const d = p.data || {};
+      // Tenant binding: checkout must pass metadata.tenantId when creating
+      // the subscription; a missing binding means we cannot attribute the
+      // event, so it is rejected rather than guessed.
+      const tenantId = d.metadata?.tenantId;
+      if (typeof tenantId !== 'string' || !tenantId) return null;
+      // Only events for our subscription plan; one-time charges or other
+      // products are not subscription lifecycle signals for us.
+      const plan = d.plan?.plan_code || d.plan_code || d.subscription?.plan?.plan_code;
+      const typeMap: Record<string, string> = {
+        'subscription.create': 'subscription.activated',
+        'charge.success': 'subscription.renewed',
+        'invoice.payment_failed': 'subscription.payment_failed',
+        'subscription.not_renewing': 'subscription.cancellation_scheduled',
+        'subscription.disable': 'subscription.cancelled',
+      };
+      const type = typeMap[event];
+      if (!type) return null;
+      if (event === 'charge.success' && plan && this.planCode && plan !== this.planCode) return null;
+      const ref = d.subscription_code || d.subscription?.subscription_code || d.reference;
+      const idSeed = d.id ?? d.subscription_code ?? d.reference ?? d.customer?.customer_code;
+      if (idSeed === undefined || idSeed === null) return null;
+      return {
+        eventId: `${event}:${idSeed}`,
+        provider: this.name,
+        type: type as NormalizedBillingEvent['type'],
+        tenantId,
+        planId: typeof plan === 'string' ? plan : undefined,
+        subscriptionRef: typeof ref === 'string' ? ref : undefined,
+        periodEnd: d.next_payment_date ? new Date(d.next_payment_date) : undefined,
+        occurredAt: d.paid_at ? new Date(d.paid_at) : new Date(),
+      };
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
  * Raw-body webhook router. Must be mounted BEFORE express.json() so HMAC
  * signatures are verified against the exact bytes the provider sent.
  */
