@@ -182,3 +182,57 @@ test('no UI or trace claims session-only processing while an excerpt is stored',
   const src = await import('node:fs').then(fs => fs.readFileSync('src/components/BidSkeletonModal.tsx', 'utf8'));
   assert.ok(!/POPIA Protected|Session-only processing/i.test(src), 'no privacy assurance badges');
 });
+
+test('issuer: a province mentioned as a place never becomes the organ of state', async () => {
+  // Regression for the live SYN/2026/004 defect: the source named only
+  // "Synthetic Metro District Municipality" and mentioned Gauteng as a
+  // delivery area, yet the checklist claimed "Gauteng Provincial Government".
+  const municipal = await executeRfpPipeline({
+    rawText: 'REQUEST FOR BID\nTender Number: SYN/2026/004\nSynthetic Metro District Municipality invites bids for the supply, delivery and installation of prefabricated guardhouse structures.\n2. Delivery and installation at depots in the Synthetic Metro area, Gauteng.\n- CIDB grading 2GB or higher.\n80/20 preference point system.\nCLOSING DATE: 15 January 2027, 11:00',
+    referenceId: 'T14', llmConfig: STATUTORY,
+  });
+  assert.equal(municipal.record.issuingDepartment, 'Synthetic Metro District Municipality', 'the inviting municipality wins, not the province');
+  assert.equal(municipal.record.province, 'Gauteng', 'province still extracted from the place mention');
+
+  const provincial = await executeRfpPipeline({
+    rawText: 'BID NUMBER: GT/GPG/2026/01\nGauteng Provincial Government invites bids for the provision of security services.\nCLOSING DATE: 2027-01-15',
+    referenceId: 'T15', llmConfig: STATUTORY,
+  });
+  assert.equal(provincial.record.issuingDepartment, 'Gauteng Provincial Government', 'explicit provincial naming still resolves');
+
+  const unnamed = await executeRfpPipeline({
+    rawText: 'Provision of general work in Gauteng. BID NUMBER: GEN-9.',
+    referenceId: 'T16', llmConfig: STATUTORY,
+  });
+  assert.equal(unnamed.record.issuingDepartment, 'Organ of State / Public Entity (South Africa)', 'no invented issuer when none is named');
+});
+
+test('issuer: named entities need issuing context; mentions never promote', async () => {
+  // Delivery to another metro must not steal the issuer role.
+  const delivery = await executeRfpPipeline({
+    rawText: 'TENDER NUMBER: DRAK-2026-07\nDrakenstein Municipality invites bids for the supply of road signage.\nDelivery within the City of Cape Town municipal area.\nCLOSING DATE: 2027-02-01',
+    referenceId: 'T17', llmConfig: STATUTORY,
+  });
+  assert.equal(delivery.record.issuingDepartment, 'Drakenstein Municipality', 'delivery metro is not the issuer');
+
+  // National Treasury referenced for its standard forms, issuer elsewhere.
+  const forms = await executeRfpPipeline({
+    rawText: 'BID NUMBER: BERG-2026-03\nBergrivier Municipality invites bids for the provision of pest control services.\nBidders must complete the National Treasury SBD 4 and SBD 6.1 forms.\nCLOSING DATE: 2027-02-10',
+    referenceId: 'T18', llmConfig: STATUTORY,
+  });
+  assert.equal(forms.record.issuingDepartment, 'Bergrivier Municipality', 'referenced forms owner is not the issuer');
+
+  // True explicit named entity, canonicalized.
+  const sanral = await executeRfpPipeline({
+    rawText: 'TENDER NUMBER: SANRAL N.001-140-2026/1\nThe South African National Roads Agency SOC Ltd (SANRAL) invites bids for the provision of road maintenance services.\nCIDB grading 5CE required.',
+    referenceId: 'T19', llmConfig: STATUTORY,
+  });
+  assert.equal(sanral.record.issuingDepartment, 'South African National Roads Agency SOC Ltd (SANRAL)', 'explicit inviter canonicalized');
+
+  // Bare entity name with no issuing context stays neutral.
+  const mention = await executeRfpPipeline({
+    rawText: 'Provision of cabling to Transnet depots. BID NUMBER: GEN-11.',
+    referenceId: 'T20', llmConfig: STATUTORY,
+  });
+  assert.equal(mention.record.issuingDepartment, 'Organ of State / Public Entity (South Africa)', 'bare mention stays neutral');
+});

@@ -341,15 +341,26 @@ ${rawText.slice(0, 10000)}`;
     .trim().slice(0, 140);
 
   // Department extraction
+  // Issuer attribution requires an explicit issuing context: an entity that
+  // "invites bids/tenders", or an "issued by / organ of state" statement.
+  // An entity or province merely MENTIONED (delivery area, referenced forms,
+  // an address) is never promoted to issuer; the neutral default stays.
   let department = 'Organ of State / Public Entity (South Africa)';
-  if (/NATIONAL TREASURY/i.test(rawText)) department = 'National Treasury of South Africa';
-  else if (/SANRAL/i.test(rawText)) department = 'South African National Roads Agency SOC Ltd (SANRAL)';
-  else if (/CITY OF CAPE TOWN/i.test(rawText)) department = 'City of Cape Town Metropolitan Municipality';
-  else if (/ESKOM/i.test(rawText)) department = 'Eskom Holdings SOC Ltd';
-  else if (/PRASA/i.test(rawText)) department = 'Passenger Rail Agency of South Africa (PRASA)';
-  else if (/TRANSNET/i.test(rawText)) department = 'Transnet SOC Ltd';
-  else if (/SITA/i.test(rawText)) department = 'State Information Technology Agency (SITA)';
-  else if (/GAUTENG/i.test(rawText)) department = 'Gauteng Provincial Government';
+  const issuerCtx =
+    rawText.match(/([A-Z][A-Za-z0-9 .&'()-]{2,90}?(?:Municipality|Municipal District|Metro|Metropolitan Municipality|Department|Authority|Agency|Board|University|College|Treasury|Government|SANRAL|Eskom|PRASA|Transnet|SITA|SOC Ltd))\)?\s+invites\s+(?:bids|tenders)/i)
+    || rawText.match(/(?:issued\s+by|organ\s+of\s+state|issuing\s+(?:department|organ|entity))\s*[:\u2013-]?\s*([A-Z][A-Za-z0-9 .&'()-]{2,90})/i);
+  if (issuerCtx) {
+    const named = issuerCtx[1].replace(/\s+/g, ' ').trim().replace(/^The\s+/i, '');
+    if (/NATIONAL TREASURY/i.test(named)) department = 'National Treasury of South Africa';
+    else if (/SANRAL/i.test(named)) department = 'South African National Roads Agency SOC Ltd (SANRAL)';
+    else if (/CITY OF CAPE TOWN/i.test(named)) department = 'City of Cape Town Metropolitan Municipality';
+    else if (/ESKOM/i.test(named)) department = 'Eskom Holdings SOC Ltd';
+    else if (/PRASA/i.test(named)) department = 'Passenger Rail Agency of South Africa (PRASA)';
+    else if (/TRANSNET/i.test(named)) department = 'Transnet SOC Ltd';
+    else if (/SITA/i.test(named)) department = 'State Information Technology Agency (SITA)';
+    else if (/GAUTENG\s+(?:PROVINCIAL|PROVINCE\s+GOVERNMENT|DEPARTMENT)/i.test(named)) department = 'Gauteng Provincial Government';
+    else department = named;
+  }
 
   // Province
   let province = 'National / South Africa';
