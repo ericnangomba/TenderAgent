@@ -20,6 +20,13 @@ export interface JourneyInput {
    * confidence: the step stays incomplete and the UI shows retry.
    */
   draftCount: number | null;
+  /**
+   * This browser completed an analysis. The server keeps no analysis
+   * history (privacy), so completion is recorded locally, exactly like the
+   * skeleton-download flag, and cleared on sign-out. A saved bid draft
+   * (server-truth) also satisfies the step.
+   */
+  analysisCompleted?: boolean;
   /** The customer downloaded a bid-response skeleton from this browser. */
   skeletonDownloaded: boolean;
 }
@@ -36,6 +43,7 @@ export interface JourneyStep {
 }
 
 export const SKELETON_DOWNLOAD_FLAG = 'ta_skeleton_downloaded';
+export const ANALYSIS_DONE_FLAG = 'ta_first_analysis_done';
 
 export function journeySteps(input: JourneyInput): JourneyStep[] {
   return [
@@ -61,7 +69,7 @@ export function journeySteps(input: JourneyInput): JourneyStep[] {
       detail: 'Upload a public tender document to get its returnables checklist and a bid draft.',
       tab: 'analyzer',
       optional: false,
-      done: (input.draftCount ?? 0) > 0,
+      done: input.analysisCompleted || (input.draftCount ?? 0) > 0,
     },
     {
       id: 'download',
@@ -75,14 +83,14 @@ export function journeySteps(input: JourneyInput): JourneyStep[] {
 }
 
 /**
- * The suggested next step: the first incomplete REQUIRED step, else the
- * first incomplete optional step, else null when everything is done.
+ * The suggested next step: the first incomplete step in journey order,
+ * optional steps included, so guidance follows the journey's sequence
+ * (a fresh account is pointed at the profile before the first analysis).
+ * Optional steps still never gate completion - see journeyComplete.
+ * Null only when every step is done.
  */
 export function nextJourneyStep(input: JourneyInput): JourneyStep | null {
-  const steps = journeySteps(input);
-  return steps.find((step) => !step.done && !step.optional)
-    ?? steps.find((step) => !step.done)
-    ?? null;
+  return journeySteps(input).find((step) => !step.done) ?? null;
 }
 
 /** True when every required step is complete (optional steps never gate). */
