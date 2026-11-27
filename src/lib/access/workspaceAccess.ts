@@ -3,7 +3,7 @@ export interface WorkspaceAccount {
   beta?: { redeemAvailable: boolean; endsAt: string | null };
   accountDeletionAvailable?: boolean;
   entitlement?: { effectiveStatus?: string; planId?: string | null; currentPeriodEnd?: string | null };
-  freemium?: { includedAnalyses: number } | null;
+  freemium?: { includedAnalyses: number; resetsAt: string } | null;
   usage?: { analyses: number; serpapiLookups: number };
   allowances?: { includedAnalyses: number; includedSerpapiLookups: number } | null;
 }
