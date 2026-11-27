@@ -24,7 +24,7 @@ import { generateBidResponseSkeleton } from './lib/utils/skeletonGenerator';
 
 import { toolsAvailable, accessGuidance, type WorkspaceAccount } from './lib/access/workspaceAccess';
 import { JourneyProgress } from './components/JourneyProgress';
-import { journeySteps, nextJourneyStep, SKELETON_DOWNLOAD_FLAG, type JourneyInput } from './lib/journey/journey';
+import { journeySteps, nextJourneyStep, journeyComplete, SKELETON_DOWNLOAD_FLAG, ANALYSIS_DONE_FLAG, type JourneyInput } from './lib/journey/journey';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('account');
@@ -63,6 +63,9 @@ export default function App() {
   const [journeyLoadFailed, setJourneyLoadFailed] = useState(false);
   const [skeletonDownloaded, setSkeletonDownloaded] = useState<boolean>(() => {
     try { return localStorage.getItem(SKELETON_DOWNLOAD_FLAG) === '1'; } catch { return false; }
+  });
+  const [analysisCompleted, setAnalysisCompleted] = useState<boolean>(() => {
+    try { return localStorage.getItem(ANALYSIS_DONE_FLAG) === '1'; } catch { return false; }
   });
   const loadJourney = useCallback(async () => {
     const owner = auth?.userId;
@@ -128,13 +131,21 @@ export default function App() {
     // Privacy: the skeleton-download flag is per-browser and must not survive
     // sign-out or an account switch on a shared device.
     try { localStorage.removeItem(SKELETON_DOWNLOAD_FLAG); } catch { /* storage unavailable */ }
+    try { localStorage.removeItem(ANALYSIS_DONE_FLAG); } catch { /* storage unavailable */ }
     setSkeletonDownloaded(false);
+    setAnalysisCompleted(false);
     setJourneyDraftCount(null);
     setJourneyLoadFailed(false);
   };
   const handleSkeletonDownloaded = () => {
     try { localStorage.setItem(SKELETON_DOWNLOAD_FLAG, '1'); } catch { /* storage unavailable */ }
     setSkeletonDownloaded(true);
+  };
+  // The server keeps no analysis history (privacy), so completion is
+  // recorded in this browser only, like the skeleton-download flag.
+  const handleAnalysisComplete = () => {
+    try { localStorage.setItem(ANALYSIS_DONE_FLAG, '1'); } catch { /* storage unavailable */ }
+    setAnalysisCompleted(true);
   };
 
   // POPIA SME Profile
@@ -157,6 +168,7 @@ export default function App() {
     profileSaved: profileStatus === 'ready' && Boolean(userProfile.companyName.trim()),
     draftCount: journeyDraftCount,
     skeletonDownloaded,
+    analysisCompleted,
   };
 
   // Customer profile is not an operator onboarding dependency.
@@ -282,7 +294,8 @@ export default function App() {
           {auth && !operationsMode && (
             <JourneyProgress
               steps={journeySteps(journeyInput)}
-              nextStepId={nextJourneyStep(journeyInput)?.id ?? null}
+              complete={journeyComplete(journeyInput)}
+              nextStepId={journeyComplete(journeyInput) ? null : (nextJourneyStep(journeyInput)?.id ?? null)}
               loadFailed={journeyLoadFailed}
               onRetry={loadJourney}
               onNavigate={navigate}
@@ -293,6 +306,7 @@ export default function App() {
           {safeTab === 'analyzer' && (
             <RfpAnalyzer
               userProfile={userProfile}
+              onAnalysisComplete={handleAnalysisComplete}
               onOpenSkeleton={handleOpenSkeleton}
               onSwitchToCalculator={handleSwitchToCalculator}
               initialSelectedTender={selectedTender}
