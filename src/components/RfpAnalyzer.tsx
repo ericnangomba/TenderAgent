@@ -37,6 +37,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   const [traceLogs, setTraceLogs] = useState<string[]>([]);
   const [spans, setSpans] = useState<ISentrySpanRecord[]>([]);
   const [extractedData, setExtractedData] = useState<any | null>(initialSelectedTender || null);
+  // The engine the SERVER says actually ran this analysis (usedModel from
+  // /api/analyze): shown verbatim so the UI never claims a mode the server
+  // did not report (rule engine, local runner or cloud failover).
+  const [usedEngine, setUsedEngine] = useState<string | null>(null);
   const [activeSkeleton, setActiveSkeleton] = useState<IBidResponseSkeleton | null>(null);
 
   const [isParsingPdf, setIsParsingPdf] = useState<boolean>(false);
@@ -233,6 +237,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         setSpans(data.spans || []);
         setExtractedData(data.tender);
         setActiveSkeleton(data.skeleton);
+        setUsedEngine(typeof data.usedModel === 'string' && data.usedModel ? data.usedModel : null);
         onAnalysisComplete?.();
       } else {
         throw new Error(data.error || 'Pipeline execution failed');
@@ -908,6 +913,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <span>This result is response-only. Save a bid draft separately to keep your work.</span>
+                {usedEngine && <span className="block mt-1">Analysis engine reported by the server: {usedEngine}</span>}
               </div>
 
               <div className="flex items-center gap-3 w-full sm:w-auto">
