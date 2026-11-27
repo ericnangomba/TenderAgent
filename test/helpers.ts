@@ -14,7 +14,7 @@ import { encryptProfileFields, decryptProfileFields, profileForClient, preparePr
 export const TEST_SECRET = 'test-webhook-secret';
 
 export function testConfig(overrides: Partial<FoundationConfig> = {}): FoundationConfig {
-  return { ...loadConfig({}), authRequired: true, accountDeletionEnabled: true, mockBillingSecret: TEST_SECRET, ...overrides };
+  return { ...loadConfig({}), authRequired: true, accountDeletionEnabled: true, adminMfaEnforced: false, mockBillingSecret: TEST_SECRET, ...overrides };
 }
 
 export interface TestApp {
