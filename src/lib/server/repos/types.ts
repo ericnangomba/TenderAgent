@@ -43,6 +43,29 @@ export interface Session {
   tokenHash: string;
   expiresAt: Date;
   createdAt: Date;
+  /** True only after a required second factor was presented for this session. */
+  mfaVerified?: boolean;
+  /** Pending second factor: the holder authenticated by password but may not
+   *  act until /auth/mfa/verify upgrades the session. */
+  pendingMfa?: boolean;
+}
+
+/** Admin MFA (TOTP) state. secretEnc is AES-256-GCM ciphertext under
+ *  PROFILE_FIELD_KEY when configured (enc:v1:...), never a plaintext secret
+ *  in responses. Recovery codes are stored as SHA-256 hashes only; the
+ *  plaintext codes are shown once at enrollment and never persisted. */
+export interface MfaRecord {
+  userId: string;
+  tenantId: string;
+  secretEnc: string;
+  /** Second factor active only after the enrollment code was confirmed AND
+   *  recovery codes were generated - never before. */
+  enabled: boolean;
+  recoveryHashes: string[];
+  /** Highest TOTP counter already accepted; equal/lower counters are replays. */
+  lastTotpCounter: number;
+  enrolledAt: Date | null;
+  updatedAt: Date;
 }
 
 export interface Entitlement {
@@ -115,9 +138,22 @@ export interface FoundationRepos {
     getByEmail(email: string): Promise<User | null>;
     getById(id: string): Promise<User | null>;
   };
+  mfa: {
+    get(userId: string): Promise<MfaRecord | null>;
+    put(m: MfaRecord): Promise<void>;
+    delete(userId: string): Promise<void>;
+    /** Atomic single use: removes the hash and returns true only for the one
+     *  caller that held it; concurrent uses of the same code cannot both win. */
+    consumeRecoveryCode(userId: string, hash: string): Promise<boolean>;
+    /** Atomic replay guard: sets lastTotpCounter to `counter` only when it is
+     *  strictly newer than the stored one; returns whether the caller won. */
+    stampTotpCounter(userId: string, counter: number): Promise<boolean>;
+  };
   sessions: {
     create(s: Session): Promise<void>;
     getByTokenHash(tokenHash: string): Promise<Session | null>;
+    /** Persist flag changes after MFA verification upgrades the session. */
+    update?(s: Session): Promise<void>;
     delete(id: string): Promise<void>;
     /** Housekeeping only: removes rows whose expiry has already passed.
      *  Expired sessions are already rejected, so this changes no access and
