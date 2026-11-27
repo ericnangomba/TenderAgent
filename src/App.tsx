@@ -23,6 +23,8 @@ import { SAMPLE_TENDERS } from './lib/data/sampleTenders';
 import { generateBidResponseSkeleton } from './lib/utils/skeletonGenerator';
 
 import { toolsAvailable, accessGuidance, type WorkspaceAccount } from './lib/access/workspaceAccess';
+import { JourneyProgress } from './components/JourneyProgress';
+import { journeySteps, nextJourneyStep, journeyComplete, SKELETON_DOWNLOAD_FLAG, ANALYSIS_DONE_FLAG, type JourneyInput } from './lib/journey/journey';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('account');
@@ -54,6 +56,32 @@ export default function App() {
       if (currentOwner.current === owner) { setAccess(data.account); setAccessFailed(false); }
     } catch { if (currentOwner.current === owner) { setAccess(null); setAccessFailed(true); } }
   }, [auth?.userId, auth?.isAdmin]);
+  // Guided journey state: draft count is server-truth (null = unknown, never
+  // treated as zero-with-confidence); the skeleton-download flag is local to
+  // this browser and is cleared on sign-out for privacy on shared devices.
+  const [journeyDraftCount, setJourneyDraftCount] = useState<number | null>(null);
+  const [journeyLoadFailed, setJourneyLoadFailed] = useState(false);
+  const [skeletonDownloaded, setSkeletonDownloaded] = useState<boolean>(() => {
+    try { return localStorage.getItem(SKELETON_DOWNLOAD_FLAG) === '1'; } catch { return false; }
+  });
+  const [analysisCompleted, setAnalysisCompleted] = useState<boolean>(() => {
+    try { return localStorage.getItem(ANALYSIS_DONE_FLAG) === '1'; } catch { return false; }
+  });
+  const loadJourney = useCallback(async () => {
+    const owner = auth?.userId;
+    if (!owner || operationsMode) return;
+    try {
+      const response = await fetch('/api/applications', { cache: 'no-store' });
+      if (!response.ok) throw new Error('journey');
+      const data = await response.json();
+      if (!data.success || !Array.isArray(data.applications)) throw new Error('journey');
+      if (currentOwner.current === owner) { setJourneyDraftCount(data.applications.length); setJourneyLoadFailed(false); }
+    } catch { if (currentOwner.current === owner) { setJourneyDraftCount(null); setJourneyLoadFailed(true); } }
+  }, [auth?.userId, operationsMode]);
+  useEffect(() => {
+    if (!auth || operationsMode) { setJourneyDraftCount(null); setJourneyLoadFailed(false); return; }
+    void loadJourney();
+  }, [auth?.userId, operationsMode, loadJourney]);
   useEffect(() => {
     if (!auth || auth.isAdmin) return;
     // No polling: recheck on entry and on returning to this browser tab.
@@ -100,6 +128,24 @@ export default function App() {
     setActiveTab(next?.isAdmin ? 'admin' : 'account');
     setUserProfile(EMPTY_PROFILE);
     setProfileStatus('loading');
+    // Privacy: the skeleton-download flag is per-browser and must not survive
+    // sign-out or an account switch on a shared device.
+    try { localStorage.removeItem(SKELETON_DOWNLOAD_FLAG); } catch { /* storage unavailable */ }
+    try { localStorage.removeItem(ANALYSIS_DONE_FLAG); } catch { /* storage unavailable */ }
+    setSkeletonDownloaded(false);
+    setAnalysisCompleted(false);
+    setJourneyDraftCount(null);
+    setJourneyLoadFailed(false);
+  };
+  const handleSkeletonDownloaded = () => {
+    try { localStorage.setItem(SKELETON_DOWNLOAD_FLAG, '1'); } catch { /* storage unavailable */ }
+    setSkeletonDownloaded(true);
+  };
+  // The server keeps no analysis history (privacy), so completion is
+  // recorded in this browser only, like the skeleton-download flag.
+  const handleAnalysisComplete = () => {
+    try { localStorage.setItem(ANALYSIS_DONE_FLAG, '1'); } catch { /* storage unavailable */ }
+    setAnalysisCompleted(true);
   };
 
   // POPIA SME Profile
@@ -117,6 +163,13 @@ export default function App() {
   // 'unavailable' = we could not load the account's profile (offline/failure).
   // Distinct from a KNOWN empty profile: views must not treat it as empty or overwrite it.
   const [profileStatus, setProfileStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const journeyInput: JourneyInput = {
+    signedIn: Boolean(auth),
+    profileSaved: profileStatus === 'ready' && Boolean(userProfile.companyName.trim()),
+    draftCount: journeyDraftCount,
+    skeletonDownloaded,
+    analysisCompleted,
+  };
 
   // Customer profile is not an operator onboarding dependency.
   useEffect(() => {
@@ -233,16 +286,27 @@ export default function App() {
             <h2 className="text-xl font-semibold">{guidance.title}</h2>
             <p className="mt-2 text-sm leading-relaxed">{guidance.body}</p>
             <div className="mt-4 flex flex-wrap gap-3">
-              {safeTab === 'account' && access?.beta?.redeemAvailable && access.entitlement?.effectiveStatus === 'none' && <a href="#beta-code" className="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-medium text-white">Enter beta code</a>}
               {safeTab !== 'account' && <button onClick={() => navigate('account')} className="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-medium text-white">Open Account</button>}
               <button onClick={() => navigate('vault')} className="rounded-lg border border-amber-700 bg-white px-4 py-2 text-sm font-medium">Complete company information</button>
               {accessFailed && <button onClick={refreshAccess} className="rounded-lg border border-amber-700 bg-white px-4 py-2 text-sm">Retry access check</button>}
             </div>
           </section>}
+          {auth && !operationsMode && (
+            <JourneyProgress
+              steps={journeySteps(journeyInput)}
+              complete={journeyComplete(journeyInput)}
+              nextStepId={journeyComplete(journeyInput) ? null : (nextJourneyStep(journeyInput)?.id ?? null)}
+              loadFailed={journeyLoadFailed}
+              onRetry={loadJourney}
+              onNavigate={navigate}
+              isDarkMode={isDarkMode}
+            />
+          )}
           <ViewErrorBoundary key={safeTab} isDarkMode={isDarkMode}>
           {safeTab === 'analyzer' && (
             <RfpAnalyzer
               userProfile={userProfile}
+              onAnalysisComplete={handleAnalysisComplete}
               onOpenSkeleton={handleOpenSkeleton}
               onSwitchToCalculator={handleSwitchToCalculator}
               initialSelectedTender={selectedTender}
@@ -310,7 +374,7 @@ export default function App() {
           )}
 
           {safeTab === 'admin' && auth?.isAdmin && (
-            <AdminDashboard />
+            <AdminDashboard onOpenAccount={() => setActiveTab('account')} />
           )}
           {safeTab === 'account' && (
             <Account
@@ -340,6 +404,7 @@ export default function App() {
         <BidSkeletonModal
           skeleton={activeSkeleton}
           onClose={() => setIsSkeletonModalOpen(false)}
+          onDownloaded={handleSkeletonDownloaded}
           isDarkMode={isDarkMode}
         />
       )}
