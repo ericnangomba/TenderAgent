@@ -5,8 +5,10 @@ import type { JourneyStep } from '../lib/journey/journey';
 
 interface JourneyProgressProps {
   steps: JourneyStep[];
-  /** Id of the suggested next step, or null when the journey is complete. */
+  /** Id of the suggested next step, or null when there is no suggestion. */
   nextStepId: string | null;
+  /** True when every required step is done (optional steps never gate). */
+  complete: boolean;
   /** True when the journey data (draft count) could not be loaded. */
   loadFailed: boolean;
   onRetry: () => void;
@@ -20,13 +22,13 @@ interface JourneyProgressProps {
  * horizontal scrolling. Completion always reflects real state computed by
  * the caller; this component renders, it does not decide.
  */
-export const JourneyProgress: React.FC<JourneyProgressProps> = ({ steps, nextStepId, loadFailed, onRetry, onNavigate, isDarkMode = false }) => {
+export const JourneyProgress: React.FC<JourneyProgressProps> = ({ steps, nextStepId, complete, loadFailed, onRetry, onNavigate, isDarkMode = false }) => {
   const doneCount = steps.filter((s) => s.done).length;
   return (
     <section aria-label="Your setup journey" className={`mb-6 rounded-2xl border p-4 sm:p-5 ${isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-100' : 'border-slate-200 bg-white text-slate-800'}`}>
       <div className="flex items-center justify-between gap-3 mb-3">
         <h2 className={`text-sm font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-          {nextStepId ? `Your journey - ${doneCount} of ${steps.length} steps done` : 'Journey complete'}
+          {complete ? 'Journey complete' : `Your journey - ${doneCount} of ${steps.length} steps done`}
         </h2>
       </div>
       {loadFailed && (
