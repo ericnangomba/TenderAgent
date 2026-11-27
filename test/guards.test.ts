@@ -114,3 +114,33 @@ test('authRequired=false keeps the demo fully open (current behavior preserved)'
     await stopTestApp(open);
   }
 });
+
+test('lapsed beta cohort account: freemium baseline shown, old plan allowance hidden', async () => {
+  const { cookie, tenantId } = await signup(t.baseUrl, 'lapsed-beta@example.com');
+  // Simulate the production slowruder state: a test_cohort row whose campaign
+  // window has closed. With no configured campaign the entitlement is
+  // effectively cancelled, so the freemium baseline applies.
+  await t.foundation.repos.entitlements.put({
+    tenantId, planId: 'test_cohort', status: 'active',
+    currentPeriodEnd: new Date('2026-11-18T00:00:00Z'), cancelAtPeriodEnd: true,
+    providerName: 'operator_comp', providerSubscriptionRef: 'beta:synthetic-pilot',
+    refundedAt: null, lastEventAt: new Date('2026-11-11T00:00:00Z'), lastEventId: 'beta:synthetic-pilot',
+    updatedAt: new Date('2026-11-11T00:00:00Z'),
+  });
+  const account = await (await fetch(`${t.baseUrl}/api/account`, { headers: { cookie } })).json();
+  assert.equal(account.account.entitlement.effectiveStatus, 'cancelled');
+  // Freemium baseline is the effective allowance: 3 free analyses this month.
+  assert.equal(account.account.freemium.includedAnalyses, 3);
+  assert.equal(account.account.usage.analyses, 0);
+  // The old cohort allowance must not be presented as available capacity.
+  assert.equal(account.account.allowances, null);
+});
+
+test('active subscription still reports its own plan allowances', async () => {
+  const { cookie, tenantId } = await signup(t.baseUrl, 'active-sub@example.com');
+  await activate(tenantId, 'evt-allowances-1');
+  const account = await (await fetch(`${t.baseUrl}/api/account`, { headers: { cookie } })).json();
+  assert.equal(account.account.entitlement.effectiveStatus, 'active');
+  assert.equal(account.account.freemium, null);
+  assert.deepEqual(account.account.allowances, { includedAnalyses: 60, includedSerpapiLookups: 30 });
+});
