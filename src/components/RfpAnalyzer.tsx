@@ -9,6 +9,8 @@ import { ITender, IUserProfile, ISentrySpanRecord, IBidResponseSkeleton } from '
 
 interface RfpAnalyzerProps {
   userProfile: IUserProfile;
+  /** Fired once per successful server analysis (result actually rendered). */
+  onAnalysisComplete?: () => void;
   onOpenSkeleton: (skeleton: IBidResponseSkeleton) => void;
   onSwitchToCalculator: (pointsSystem: '80/20' | '90/10', tenderTitle: string) => void;
   /** Operator flag: the model-switcher bar is platform tooling, not customer UI. */
@@ -19,6 +21,7 @@ interface RfpAnalyzerProps {
 
 export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   userProfile,
+  onAnalysisComplete,
   onOpenSkeleton,
   onSwitchToCalculator,
   isAdmin = false,
@@ -34,6 +37,10 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   const [traceLogs, setTraceLogs] = useState<string[]>([]);
   const [spans, setSpans] = useState<ISentrySpanRecord[]>([]);
   const [extractedData, setExtractedData] = useState<any | null>(initialSelectedTender || null);
+  // The engine the SERVER says actually ran this analysis (usedModel from
+  // /api/analyze): shown verbatim so the UI never claims a mode the server
+  // did not report (rule engine, local runner or cloud failover).
+  const [usedEngine, setUsedEngine] = useState<string | null>(null);
   const [activeSkeleton, setActiveSkeleton] = useState<IBidResponseSkeleton | null>(null);
 
   const [isParsingPdf, setIsParsingPdf] = useState<boolean>(false);
@@ -230,6 +237,8 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         setSpans(data.spans || []);
         setExtractedData(data.tender);
         setActiveSkeleton(data.skeleton);
+        setUsedEngine(typeof data.usedModel === 'string' && data.usedModel ? data.usedModel : null);
+        onAnalysisComplete?.();
       } else {
         throw new Error(data.error || 'Pipeline execution failed');
       }
@@ -317,7 +326,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               Drop the tender PDF or paste its text below. Your checklist appears on this page when the check finishes.
             </p>
 
-            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Beta testers: use public or synthetic documents only. The free beta uses a rule-based preview, not a language model. Confirm every requirement against the source tender.</p>
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Use public or synthetic documents only. Confirm every requirement against the source tender document.</p>
             {/* Sample tenders: optional, clearly labeled, collapsed by default */}
             <div className="mb-4">
               <button
@@ -904,6 +913,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               <div className="flex items-center gap-2 text-xs text-slate-500">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />
                 <span>This result is response-only. Save a bid draft separately to keep your work.</span>
+                {usedEngine && <span className="block mt-1">Analysis engine reported by the server: {usedEngine}</span>}
               </div>
 
               <div className="flex items-center gap-3 w-full sm:w-auto">
