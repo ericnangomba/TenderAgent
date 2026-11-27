@@ -19,9 +19,6 @@ type AccountInfo = WorkspaceAccount;
  * Sign-in/registration lives on the landing page (AuthCard), not here.
  */
 export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange, operationsMode = false, onAccessChange, accessInfo }) => {
-  const [betaCode, setBetaCode] = useState('');
-  const [betaMessage, setBetaMessage] = useState('');
-  const [betaBusy, setBetaBusy] = useState(false);
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [accountDeleteOpen, setAccountDeleteOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -42,36 +39,6 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
       .then((d) => d?.success && setInfo(d.account))
       .catch(() => setInfo(null));
   }, [auth, accessInfo]);
-
-  // Fixed campaign expiry also closes an already-open code form. The server
-  // remains authoritative if a backgrounded browser delays this timer.
-  React.useEffect(() => {
-    const end = info?.beta?.endsAt;
-    if (!end) return;
-    const remaining = Date.parse(end) - Date.now();
-    const close = () => setInfo(current => current ? { ...current, beta: { ...current.beta!, redeemAvailable: false },
-      entitlement: current.entitlement?.planId === 'test_cohort' ? { ...current.entitlement, effectiveStatus: 'cancelled' } : current.entitlement } : current);
-    if (remaining <= 0) { if (info.beta?.redeemAvailable || (info.entitlement?.planId === 'test_cohort' && info.entitlement.effectiveStatus === 'active')) close(); return; }
-    const timer = window.setTimeout(close, Math.min(remaining, 2147483647));
-    return () => window.clearTimeout(timer);
-  }, [info?.beta?.endsAt, info?.beta?.redeemAvailable, info?.entitlement?.effectiveStatus]);
-
-  const redeemBeta = async (e: React.FormEvent) => {
-    e.preventDefault(); setBetaBusy(true); setBetaMessage('');
-    try {
-      const res = await fetch('/api/beta/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: betaCode }) });
-      setBetaCode('');
-      if (!res.ok) { setBetaMessage(res.status === 429 ? 'Too many attempts. Wait ten minutes.' : 'Code not accepted. It may be expired or not available for this account.'); return; }
-      const account = await fetch('/api/account');
-      if (!account.ok) throw new Error('refresh');
-      const d = await account.json();
-      if (!d.success || d.account?.entitlement?.planId !== 'test_cohort' || d.account.entitlement.effectiveStatus !== 'active') throw new Error('unconfirmed');
-      setInfo(d.account);
-      onAccessChange?.(d.account);
-      setBetaMessage('Beta access confirmed active. No payment was taken. Your shared end date and pilot allowance are shown below.');
-    } catch { setBetaMessage('Could not confirm access. Refresh your account before trying again.'); }
-    finally { setBetaBusy(false); }
-  };
 
   const logout = async () => {
     setLogoutError(null);
@@ -218,27 +185,18 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           {status === 'active'
             ? <CheckCircle2 className={`w-4 h-4 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
             : <AlertCircle className={`w-4 h-4 ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`} />}
-          <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{info?.entitlement?.planId === 'test_cohort' ? (status === 'active' ? 'Free beta access active' : 'Beta access ended') : status === 'none' && info?.beta?.redeemAvailable ? 'Beta code not redeemed' : statusLabel[status] || status}</span>
+          <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{info?.freemium ? 'Free plan' : info?.entitlement?.planId === 'test_cohort' ? (status === 'active' ? 'Free access active' : 'Free access ended') : statusLabel[status] || status}</span>
         </div>
         {info?.entitlement?.currentPeriodEnd && status === 'active' && (
           <p className={`text-xs mt-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
-            {info.entitlement.planId === 'test_cohort' ? 'Beta ends' : 'Access ends'} {new Date(info.entitlement.currentPeriodEnd).toLocaleString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
+            {info.freemium ? 'Free analyses reset monthly' : 'Access ends'} {new Date(info.entitlement.currentPeriodEnd).toLocaleString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
           </p>
         )}
-        <p className="text-xs mt-3 text-slate-500">Real payments are not connected. Beta access does not collect a card or start a paid subscription.</p>
-        {info?.entitlement?.planId === 'test_cohort' && <p className="text-xs mt-2 text-slate-500">Public or synthetic documents only. Rule-based preview, not a language model. No paid searches. Check the source tender before relying on results.</p>}
-        {info?.beta?.redeemAvailable && info.entitlement?.effectiveStatus === 'none' && (
-          <form onSubmit={redeemBeta} className="mt-4 space-y-3 rounded-xl border-2 border-emerald-600 bg-emerald-50 p-4 text-emerald-950">
-            <label htmlFor="beta-code" className="block text-lg font-semibold">Redeem your provided beta code</label>
-            <p className="text-xs text-slate-500">One shared beta window. Late joiners get the time remaining, not a new seven days.</p>
-            <input id="beta-code" type="password" autoComplete="off" value={betaCode} onChange={e => setBetaCode(e.target.value)} maxLength={256} required className="w-full rounded-lg border border-slate-300 bg-transparent p-3" />
-            <button disabled={betaBusy} className="rounded-lg bg-emerald-700 text-white px-4 py-2 disabled:opacity-50">{betaBusy ? 'Checking...' : 'Apply beta code'}</button>
-          </form>
-        )}
-        {betaMessage && <p role="status" className="text-sm mt-3">{betaMessage}</p>}
+        <p className="text-xs mt-3 text-slate-500">Real payments are not connected. No card is collected and no paid subscription starts.</p>
+        {(info?.freemium || info?.entitlement?.planId === 'test_cohort') && <p className="text-xs mt-2 text-slate-500">Public or synthetic documents only. Rule-based preview, not a language model. No paid searches. Check the source tender before relying on results.</p>}
         {info?.allowances && (
           <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-            <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>{info.entitlement?.planId === 'test_cohort' ? 'Usage across this beta pilot' : 'Usage this month'}</p>
+            <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>'Usage this month'</p>
             <div className={`grid grid-cols-2 gap-3 text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
               <div className={`rounded-xl p-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
                 <div className="text-lg font-bold">{info.usage?.analyses ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.allowances.includedAnalyses}</span></div>
