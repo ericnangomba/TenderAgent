@@ -85,6 +85,10 @@ export interface FoundationConfig {
    *  There is deliberately no shared public default - a known secret lets
    *  anyone forge subscription activations. */
   mockBillingSecret: string;
+  /** Paystack secret key (webhook HMAC-SHA512 verification). Empty = provider off. */
+  paystackSecretKey: string;
+  /** Paystack plan code for the R250/month subscription, set after merchant onboarding. */
+  paystackPlanCode: string;
   /** Express 'trust proxy' setting for correct client IPs behind Eric's reverse
    *  proxy. Defaults to false: blindly trusting X-Forwarded-For lets clients
    *  spoof their IP past the auth rate limiter. Set TRUST_PROXY=1 (or a CIDR)
@@ -115,6 +119,9 @@ export interface FoundationConfig {
    * into the deployment environment to grant access.
    */
   adminUserIds: string[];
+  /** Enforce TOTP MFA on admin routes (owner requirement). Default on;
+   *  ADMIN_MFA_ENFORCED=false is the operator escape hatch for recovery. */
+  adminMfaEnforced: boolean;
   /** AES-256-GCM key source for sensitive profile fields at rest (empty = off, reported in /api/health). */
   profileFieldKey: string;
 }
@@ -176,6 +183,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FoundationConf
     sessionTtlHours: Number(env.SESSION_TTL_HOURS || 24 * 7),
     pastDueGraceDays: Number(env.PAST_DUE_GRACE_DAYS || 3),
     mockBillingSecret: env.MOCK_BILLING_SECRET || '',
+    paystackSecretKey: env.PAYSTACK_SECRET_KEY || '',
+    paystackPlanCode: env.PAYSTACK_PLAN_CODE || '',
     minPasswordLength: Number(env.MIN_PASSWORD_LENGTH || 10),
     store: env.STORE === 'mongo' ? 'mongo' : env.STORE === 'postgres' ? 'postgres' : 'memory',
     mongoUri: env.MONGODB_URI || '',
@@ -184,6 +193,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): FoundationConf
     publicOrigin: env.PUBLIC_ORIGIN || '',
     trustProxy: env.TRUST_PROXY === undefined ? false : (env.TRUST_PROXY === 'false' ? false : env.TRUST_PROXY || true),
     adminUserIds: (env.ADMIN_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean),
+    adminMfaEnforced: env.ADMIN_MFA_ENFORCED !== 'false',
     profileFieldKey: env.PROFILE_FIELD_KEY || '',
   };
 }

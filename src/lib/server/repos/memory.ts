@@ -1,7 +1,6 @@
 /** In-memory repositories: default driver for development and the whole test suite. */
 import type {
-  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile, DeletionLedgerEntry,
-} from './types';
+  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile, DeletionLedgerEntry, MfaRecord } from './types';
 import { AccountDeletionError, hasExternalBilling } from '../accountLifecycle';
 import { pilotOpen, pilotEntitlement, matchingPilotEntitlement, type PilotCampaign, type PilotInvite, type PilotChange } from '../betaPilot';
 import type { BidApplication } from '../readiness';
@@ -11,6 +10,7 @@ export function createMemoryRepos(): FoundationRepos {
   const usersById = new Map<string, User>();
   const usersByEmail = new Map<string, User>();
   const sessionsById = new Map<string, Session>();
+  const mfaByUserId = new Map<string, MfaRecord>();
   const sessionsByToken = new Map<string, Session>();
   const entitlements = new Map<string, Entitlement>();
   const billingEventIds = new Map<string, BillingEventRecord>();
@@ -41,6 +41,7 @@ export function createMemoryRepos(): FoundationRepos {
         if (!deletionLedger.has(tenantId)) deletionLedger.set(tenantId, { tenantId, erasedAt: new Date() });
         // Synchronous block: no partially erased state can interleave.
         for (const [id, u] of usersById) if (u.tenantId === tenantId) { usersById.delete(id); usersByEmail.delete(u.email.toLowerCase()); }
+        for (const [uid, m] of mfaByUserId) if (m.tenantId === tenantId) mfaByUserId.delete(uid);
         for (const [id, v] of sessionsById) if (v.tenantId === tenantId) { sessionsById.delete(id); sessionsByToken.delete(v.tokenHash); }
         for (const [id, v] of applications) if (v.tenantId === tenantId) applications.delete(id);
         for (const [id, v] of usage) if (v.tenantId === tenantId) usage.delete(id);
@@ -104,8 +105,27 @@ export function createMemoryRepos(): FoundationRepos {
       async getByEmail(email) { const u = usersByEmail.get(email.toLowerCase()); return u ? clone(u) : null; },
       async getById(id) { const u = usersById.get(id); return u ? clone(u) : null; },
     },
+    mfa: {
+      async get(userId) { const m = mfaByUserId.get(userId); return m ? clone(m) : null; },
+      async put(m) { mfaByUserId.set(m.userId, clone(m)); },
+      async delete(userId) { mfaByUserId.delete(userId); },
+      // Single-threaded event loop: check-and-mutate in one synchronous turn is atomic.
+      async consumeRecoveryCode(userId, hash) {
+        const m = mfaByUserId.get(userId);
+        if (!m || !m.recoveryHashes.includes(hash)) return false;
+        m.recoveryHashes = m.recoveryHashes.filter(x => x !== hash);
+        return true;
+      },
+      async stampTotpCounter(userId, counter) {
+        const m = mfaByUserId.get(userId);
+        if (!m || counter <= m.lastTotpCounter) return false;
+        m.lastTotpCounter = counter;
+        return true;
+      },
+    },
     sessions: {
       async create(s) { sessionsById.set(s.id, clone(s)); sessionsByToken.set(s.tokenHash, clone(s)); },
+      async update(s) { sessionsById.set(s.id, clone(s)); sessionsByToken.set(s.tokenHash, clone(s)); },
       async getByTokenHash(h) { const s = sessionsByToken.get(h); return s ? clone(s) : null; },
       async delete(id) {
         const s = sessionsById.get(id);

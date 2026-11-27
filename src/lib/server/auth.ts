@@ -15,6 +15,8 @@ export interface AuthContext {
   userId: string;
   tenantId: string;
   email: string;
+  /** True when this session presented the required second factor. */
+  mfaVerified?: boolean;
 }
 
 declare module 'express-serve-static-core' {
@@ -25,7 +27,7 @@ declare module 'express-serve-static-core' {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function hashToken(token: string): string {
+export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
@@ -60,16 +62,20 @@ export async function createSession(
   repos: FoundationRepos,
   config: FoundationConfig,
   user: User,
+  opts: { pendingMfa?: boolean; ttlMs?: number; mfaVerified?: boolean } = {},
 ): Promise<{ token: string; session: Session }> {
   const token = randomBytes(32).toString('base64url');
   const now = new Date();
+  const ttl = opts.ttlMs ?? config.sessionTtlHours * 60 * 60 * 1000;
   const session: Session = {
     id: randomBytes(16).toString('hex'),
     userId: user.id,
     tenantId: user.tenantId,
     tokenHash: hashToken(token),
-    expiresAt: new Date(now.getTime() + config.sessionTtlHours * 60 * 60 * 1000),
+    expiresAt: new Date(now.getTime() + ttl),
     createdAt: now,
+    mfaVerified: opts.mfaVerified === true,
+    pendingMfa: opts.pendingMfa === true,
   };
   await repos.sessions.create(session);
   return { token, session };
@@ -82,13 +88,18 @@ export async function resolveSession(
   if (!token) return null;
   const session = await repos.sessions.getByTokenHash(hashToken(token));
   if (!session) return null;
+  // A session still waiting for its second factor authenticates nothing:
+  // only /auth/mfa/verify may use it, and it reads the record directly.
+  // Checked before expiry so the verify route can answer mfa_pending_expired
+  // instead of the middleware silently deleting the record first.
+  if (session.pendingMfa) return null;
   if (session.expiresAt.getTime() <= Date.now()) {
     await repos.sessions.delete(session.id);
     return null;
   }
   const user = await repos.users.getById(session.userId);
   if (!user) return null;
-  return { userId: user.id, tenantId: user.tenantId, email: user.email };
+  return { userId: user.id, tenantId: user.tenantId, email: user.email, mfaVerified: session.mfaVerified === true };
 }
 
 export function createSessionMiddleware(repos: FoundationRepos) {
@@ -219,9 +230,19 @@ export function createAuthRouter(repos: FoundationRepos, config: FoundationConfi
         res.status(401).json({ success: false, error: 'invalid_credentials' });
         return;
       }
+      const isAdmin = config.adminUserIds.includes(user.id);
+      const mfa = isAdmin ? await repos.mfa.get(user.id) : null;
+      if (isAdmin && mfa?.enabled) {
+        // Enrolled admin: password alone gets a pending session that unlocks
+        // nothing until the second factor verifies (10-minute window).
+        const pending = await createSession(repos, config, user, { pendingMfa: true, ttlMs: 10 * 60 * 1000 });
+        setSessionCookie(res, pending.token, 10 * 60 * 1000, isSecureRequest(req, config));
+        res.json({ success: true, mfaRequired: true });
+        return;
+      }
       const { token } = await createSession(repos, config, user);
       setSessionCookie(res, token, config.sessionTtlHours * 60 * 60 * 1000, isSecureRequest(req, config));
-      res.json({ success: true, tenantId: user.tenantId, email: user.email, userId: user.id, isAdmin: config.adminUserIds.includes(user.id) });
+      res.json({ success: true, tenantId: user.tenantId, email: user.email, userId: user.id, isAdmin, mfaSetupRequired: isAdmin && !mfa?.enabled });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
@@ -239,6 +260,114 @@ export function createAuthRouter(repos: FoundationRepos, config: FoundationConfi
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }
+  });
+
+  // Second-factor verification for pending sessions. Reads the pending
+  // session record directly - the session middleware deliberately does not
+  // authenticate pending sessions.
+  const mfaLimiter = createRateLimiter(5, 5 * 60 * 1000);
+  router.post('/auth/mfa/verify', async (req: Request, res: Response) => {
+    try {
+      const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+      const session = token ? await repos.sessions.getByTokenHash(hashToken(token)) : null;
+      if (!session || !session.pendingMfa) {
+        res.status(401).json({ success: false, error: 'mfa_not_pending' });
+        return;
+      }
+      if (session.expiresAt.getTime() <= Date.now()) {
+        await repos.sessions.delete(session.id);
+        res.status(401).json({ success: false, error: 'mfa_pending_expired' });
+        return;
+      }
+      const key = `mfa:${session.userId}`;
+      if (!mfaLimiter.peek(key)) {
+        res.status(429).json({ success: false, error: 'too_many_attempts' });
+        return;
+      }
+      const { code } = req.body || {};
+      if (typeof code !== 'string' || !code.trim()) {
+        res.status(400).json({ success: false, error: 'code required' });
+        return;
+      }
+      const { verifySecondFactor } = await import('./mfa');
+      const result = await verifySecondFactor(repos, config.profileFieldKey, session.userId, code);
+      if (!result.ok) {
+        mfaLimiter.hit(key);
+        res.status(401).json({ success: false, error: 'invalid_code' });
+        return;
+      }
+      // Rotate the token on privilege change: the pending session is deleted
+      // and a fresh full session issued, so a fixated or leaked pending token
+      // is worthless after verification.
+      await repos.sessions.delete(session.id);
+      const user = await repos.users.getById(session.userId);
+      if (!user) { res.status(401).json({ success: false, error: 'not_authenticated' }); return; }
+      const full = await createSession(repos, config, user, { mfaVerified: true });
+      setSessionCookie(res, full.token, config.sessionTtlHours * 60 * 60 * 1000, isSecureRequest(req, config));
+      res.json({ success: true, via: result.via, recoveryCodesLeft: result.recoveryCodesLeft, userId: session.userId, tenantId: session.tenantId, email: user?.email, isAdmin: config.adminUserIds.includes(session.userId) });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Enrollment: any signed-in user may enroll; only admins are forced to.
+  router.post('/auth/mfa/enroll/start', async (req: Request, res: Response) => {
+    try {
+      if (!req.auth) { res.status(401).json({ success: false, error: 'not_authenticated' }); return; }
+      // Re-enrollment replaces the second factor: once MFA is enabled, a
+      // session that never presented it (password-only, pre-enrollment, or
+      // otherwise unverified) must not be able to swap the secret. First-time
+      // bootstrap for an unenrolled account stays session-only.
+      const existing = await repos.mfa.get(req.auth.userId);
+      if (existing?.enabled && req.auth.mfaVerified !== true) {
+        res.status(403).json({ success: false, error: 'mfa_verification_required' });
+        return;
+      }
+      const { startEnrollment } = await import('./mfa');
+      const r = await startEnrollment(repos, config.profileFieldKey, req.auth.userId, req.auth.tenantId, req.auth.email);
+      res.json({ success: true, ...r });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  router.post('/auth/mfa/enroll/confirm', async (req: Request, res: Response) => {
+    try {
+      if (!req.auth) { res.status(401).json({ success: false, error: 'not_authenticated' }); return; }
+      // Same replacement guard as enroll/start: confirming with a session
+      // that lacks a verified second factor cannot activate a new secret
+      // over an already-enabled one.
+      const prior = await repos.mfa.get(req.auth.userId);
+      if (prior?.enabled && req.auth.mfaVerified !== true) {
+        res.status(403).json({ success: false, error: 'mfa_verification_required' });
+        return;
+      }
+      const { code } = req.body || {};
+      if (typeof code !== 'string' || !code.trim()) {
+        res.status(400).json({ success: false, error: 'code required' });
+        return;
+      }
+      const { confirmEnrollment } = await import('./mfa');
+      const r = await confirmEnrollment(repos, config.profileFieldKey, req.auth.userId, code);
+      if (!r) { res.status(400).json({ success: false, error: 'invalid_code' }); return; }
+      // The authenticator was just proven in this session: count it.
+      const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+      const session = token ? await repos.sessions.getByTokenHash(hashToken(token)) : null;
+      if (session && !session.pendingMfa) {
+        session.mfaVerified = true;
+        if (repos.sessions.update) await repos.sessions.update(session);
+      }
+      res.json({ success: true, recoveryCodes: r.recoveryCodes });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  router.get('/auth/mfa/status', async (req: Request, res: Response) => {
+    if (!req.auth) { res.status(401).json({ success: false, error: 'not_authenticated' }); return; }
+    const { mfaStatus } = await import('./mfa');
+    const st = await mfaStatus(repos, req.auth.userId);
+    res.json({ success: true, ...st, required: config.adminUserIds.includes(req.auth.userId) });
   });
 
   router.get('/auth/me', (req: Request, res: Response) => {

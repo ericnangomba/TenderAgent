@@ -12,8 +12,7 @@ import { Pool } from 'pg';
 import { createPostgresPilot } from './postgresPilot';
 import { AccountDeletionError } from '../accountLifecycle';
 import type {
-  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile, DeletionLedgerEntry,
-} from './types';
+  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile, DeletionLedgerEntry, MfaRecord } from './types';
 import type { BidApplication } from '../readiness';
 
 /** Minimal pool surface so pg-mem adapters work in tests. */
@@ -99,10 +98,26 @@ CREATE TABLE IF NOT EXISTS foundation_applications (
   updated_at timestamptz NOT NULL,
   PRIMARY KEY (tenant_id, id)
 );
+
+CREATE TABLE IF NOT EXISTS foundation_mfa (
+  user_id text PRIMARY KEY,
+  tenant_id text NOT NULL,
+  secret_enc text NOT NULL,
+  enabled boolean NOT NULL DEFAULT false,
+  recovery_hashes jsonb NOT NULL DEFAULT '[]',
+  last_totp_counter bigint NOT NULL DEFAULT -1,
+  enrolled_at timestamptz,
+  updated_at timestamptz NOT NULL
+);
 `;
 
 export async function ensurePostgresSchema(pool: PoolLike): Promise<void> {
   await pool.query(POSTGRES_SCHEMA);
+  // Column-level upgrades for databases created before MFA: CREATE TABLE IF
+  // NOT EXISTS never alters an existing table, so add the MFA flags here.
+  await pool.query(`ALTER TABLE foundation_sessions ADD COLUMN IF NOT EXISTS mfa_verified boolean NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE foundation_sessions ADD COLUMN IF NOT EXISTS pending_mfa boolean NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE foundation_mfa ADD COLUMN IF NOT EXISTS last_totp_counter bigint NOT NULL DEFAULT -1`);
 }
 
 /** Connect a real Postgres and apply the schema before serving.
@@ -141,7 +156,7 @@ export async function connectPostgres(uri: string, enableDeletionConstraints = f
  * Foreign-key row locks serialize every insert/update with tenant erasure,
  * including late webhook/usage writes, across processes. */
 export async function ensureTenantForeignKeys(pool: PoolLike): Promise<void> {
-  for (const table of ['users','sessions','entitlements','billing_events','usage_counters','profiles','applications']) {
+  for (const table of ['users','sessions','entitlements','billing_events','usage_counters','profiles','applications','mfa']) {
     const name = `foundation_${table}_tenant_live`;
     await pool.query(`DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${name}' AND conrelid = 'foundation_${table}'::regclass) THEN
@@ -301,11 +316,56 @@ export function createPostgresRepos(pool: PoolLike, tenantConstraintsReady = fal
         return r ? { id: r.id, tenantId: r.tenant_id, email: r.email, passwordHash: r.password_hash, createdAt: asDate(r.created_at) } : null;
       },
     },
+    mfa: {
+      async get(userId) {
+        const { rows } = await pool.query('SELECT * FROM foundation_mfa WHERE user_id = $1', [userId]);
+        const r = rows[0];
+        return r ? {
+          userId: r.user_id, tenantId: r.tenant_id, secretEnc: r.secret_enc,
+          enabled: r.enabled, recoveryHashes: Array.isArray(r.recovery_hashes) ? r.recovery_hashes : [],
+          lastTotpCounter: Number(r.last_totp_counter ?? -1),
+          enrolledAt: r.enrolled_at ? asDate(r.enrolled_at) : null, updatedAt: asDate(r.updated_at),
+        } : null;
+      },
+      async put(m: MfaRecord) {
+        await pool.query(
+          `INSERT INTO foundation_mfa (user_id, tenant_id, secret_enc, enabled, recovery_hashes, enrolled_at, updated_at, last_totp_counter)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (user_id) DO UPDATE SET secret_enc=$3, enabled=$4, recovery_hashes=$5, enrolled_at=$6, updated_at=$7, last_totp_counter=$8`,
+          [m.userId, m.tenantId, m.secretEnc, m.enabled, JSON.stringify(m.recoveryHashes), m.enrolledAt, m.updatedAt, m.lastTotpCounter],
+        );
+      },
+      async delete(userId) { await pool.query('DELETE FROM foundation_mfa WHERE user_id = $1', [userId]); },
+      async consumeRecoveryCode(userId, hash) {
+        const { rows } = await pool.query(
+          `UPDATE foundation_mfa
+             SET recovery_hashes = COALESCE((SELECT jsonb_agg(x) FROM jsonb_array_elements_text(recovery_hashes) AS x WHERE x <> $2), '[]'::jsonb),
+                 updated_at = now()
+           WHERE user_id = $1 AND recovery_hashes ? $2
+           RETURNING user_id`,
+          [userId, hash],
+        );
+        return rows.length === 1;
+      },
+      async stampTotpCounter(userId, counter) {
+        const { rows } = await pool.query(
+          'UPDATE foundation_mfa SET last_totp_counter = $2, updated_at = now() WHERE user_id = $1 AND last_totp_counter < $2 RETURNING user_id',
+          [userId, counter],
+        );
+        return rows.length === 1;
+      },
+    },
     sessions: {
       async create(s: Session) {
         await pool.query(
-          'INSERT INTO foundation_sessions (id, user_id, tenant_id, token_hash, expires_at, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
-          [s.id, s.userId, s.tenantId, s.tokenHash, s.expiresAt, s.createdAt],
+          'INSERT INTO foundation_sessions (id, user_id, tenant_id, token_hash, expires_at, created_at, mfa_verified, pending_mfa) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+          [s.id, s.userId, s.tenantId, s.tokenHash, s.expiresAt, s.createdAt, Boolean(s.mfaVerified), Boolean(s.pendingMfa)],
+        );
+      },
+      async update(s: Session) {
+        await pool.query(
+          'UPDATE foundation_sessions SET mfa_verified=$2, pending_mfa=$3, expires_at=$4 WHERE id=$1',
+          [s.id, Boolean(s.mfaVerified), Boolean(s.pendingMfa), s.expiresAt],
         );
       },
       async getByTokenHash(tokenHash: string) {
@@ -314,6 +374,7 @@ export function createPostgresRepos(pool: PoolLike, tenantConstraintsReady = fal
         return r ? {
           id: r.id, userId: r.user_id, tenantId: r.tenant_id, tokenHash: r.token_hash,
           expiresAt: asDate(r.expires_at), createdAt: asDate(r.created_at),
+          mfaVerified: Boolean(r.mfa_verified), pendingMfa: Boolean(r.pending_mfa),
         } : null;
       },
       async delete(id: string) {

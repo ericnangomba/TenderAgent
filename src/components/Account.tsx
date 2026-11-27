@@ -19,9 +19,6 @@ type AccountInfo = WorkspaceAccount;
  * Sign-in/registration lives on the landing page (AuthCard), not here.
  */
 export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange, operationsMode = false, onAccessChange, accessInfo }) => {
-  const [betaCode, setBetaCode] = useState('');
-  const [betaMessage, setBetaMessage] = useState('');
-  const [betaBusy, setBetaBusy] = useState(false);
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [accountDeleteOpen, setAccountDeleteOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
@@ -30,6 +27,49 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
   const [accountDeleteError, setAccountDeleteError] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [profileDelete, setProfileDelete] = useState<'idle' | 'confirm' | 'busy' | 'done' | 'error'>('idle');
+  // Admin two-factor enrollment state.
+  const [mfa, setMfa] = useState<{ enrolled: boolean; recoveryCodesLeft: number } | null>(null);
+  const [mfaStart, setMfaStart] = useState<{ otpauthUri: string; manualKey: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaCodes, setMfaCodes] = useState<string[] | null>(null);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+  const [mfaBusy, setMfaBusy] = useState(false);
+
+  React.useEffect(() => {
+    if (!auth?.isAdmin) { setMfa(null); return; }
+    fetch('/api/auth/mfa/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.success && setMfa({ enrolled: d.enrolled, recoveryCodesLeft: d.recoveryCodesLeft }))
+      .catch(() => setMfa(null));
+  }, [auth]);
+
+  const mfaBegin = async () => {
+    setMfaBusy(true); setMfaError(null);
+    try {
+      const r = await fetch('/api/auth/mfa/enroll/start', { method: 'POST' });
+      const d = await r.json();
+      if (r.ok && d?.success) setMfaStart({ otpauthUri: d.otpauthUri, manualKey: d.manualKey });
+      else setMfaError(d?.error === 'mfa_verification_required' ? 'Sign in again with your authenticator before changing two-factor settings.' : (d?.error || 'Could not start setup.'));
+    } catch { setMfaError('Could not reach the server.'); }
+    finally { setMfaBusy(false); }
+  };
+
+  const mfaConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMfaBusy(true); setMfaError(null);
+    try {
+      const r = await fetch('/api/auth/mfa/enroll/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: mfaCode.trim() }) });
+      const d = await r.json();
+      if (r.ok && d?.success) {
+        setMfaCodes(d.recoveryCodes);
+        setMfaStart(null);
+        setMfa({ enrolled: true, recoveryCodesLeft: d.recoveryCodes.length });
+      } else {
+        setMfaError(d?.error === 'invalid_code' ? 'That code did not match. Check the time on your authenticator device and try again.' : (d?.error || 'Setup failed.'));
+      }
+    } catch { setMfaError('Could not reach the server.'); }
+    finally { setMfaBusy(false); }
+  };
 
   React.useEffect(() => {
     if (!auth) {
@@ -42,36 +82,6 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
       .then((d) => d?.success && setInfo(d.account))
       .catch(() => setInfo(null));
   }, [auth, accessInfo]);
-
-  // Fixed campaign expiry also closes an already-open code form. The server
-  // remains authoritative if a backgrounded browser delays this timer.
-  React.useEffect(() => {
-    const end = info?.beta?.endsAt;
-    if (!end) return;
-    const remaining = Date.parse(end) - Date.now();
-    const close = () => setInfo(current => current ? { ...current, beta: { ...current.beta!, redeemAvailable: false },
-      entitlement: current.entitlement?.planId === 'test_cohort' ? { ...current.entitlement, effectiveStatus: 'cancelled' } : current.entitlement } : current);
-    if (remaining <= 0) { if (info.beta?.redeemAvailable || (info.entitlement?.planId === 'test_cohort' && info.entitlement.effectiveStatus === 'active')) close(); return; }
-    const timer = window.setTimeout(close, Math.min(remaining, 2147483647));
-    return () => window.clearTimeout(timer);
-  }, [info?.beta?.endsAt, info?.beta?.redeemAvailable, info?.entitlement?.effectiveStatus]);
-
-  const redeemBeta = async (e: React.FormEvent) => {
-    e.preventDefault(); setBetaBusy(true); setBetaMessage('');
-    try {
-      const res = await fetch('/api/beta/redeem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: betaCode }) });
-      setBetaCode('');
-      if (!res.ok) { setBetaMessage(res.status === 429 ? 'Too many attempts. Wait ten minutes.' : 'Code not accepted. It may be expired or not available for this account.'); return; }
-      const account = await fetch('/api/account');
-      if (!account.ok) throw new Error('refresh');
-      const d = await account.json();
-      if (!d.success || d.account?.entitlement?.planId !== 'test_cohort' || d.account.entitlement.effectiveStatus !== 'active') throw new Error('unconfirmed');
-      setInfo(d.account);
-      onAccessChange?.(d.account);
-      setBetaMessage('Beta access confirmed active. No payment was taken. Your shared end date and pilot allowance are shown below.');
-    } catch { setBetaMessage('Could not confirm access. Refresh your account before trying again.'); }
-    finally { setBetaBusy(false); }
-  };
 
   const logout = async () => {
     setLogoutError(null);
@@ -157,14 +167,69 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
   const statusLabel: Record<string, string> = {
     none: 'No active subscription', active: 'Subscription active', past_due: 'Payment outstanding', cancelled: 'Subscription cancelled',
   };
-  if (operationsMode) return <section className={card}>
+  const mfaCard = auth.isAdmin ? (
+
+  <div className={card}>
+    <h3 className={`text-sm font-bold uppercase mb-3 flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+      <ShieldCheck className="w-4 h-4 text-emerald-600" /> Two-factor sign-in (admin)
+    </h3>
+    {mfa?.enrolled && !mfaCodes ? (
+      <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        Two-factor sign-in is <strong>on</strong> for this admin account. Recovery codes remaining: {mfa.recoveryCodesLeft}.
+        {mfa.recoveryCodesLeft <= 2 ? ' Re-enroll to generate fresh recovery codes.' : ''}
+      </p>
+    ) : !mfaStart && !mfaCodes ? (
+      <>
+        <p className={`text-xs leading-relaxed mb-3 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Admin tools stay locked until two-factor is set up. You will need an authenticator app (for example Google Authenticator, Microsoft Authenticator or 1Password) on your phone.
+        </p>
+        <button onClick={mfaBegin} disabled={mfaBusy} className="text-xs px-3 py-2 rounded-lg bg-emerald-700 text-white font-semibold disabled:opacity-60">
+          {mfaBusy ? 'Preparing...' : 'Set up two-factor sign-in'}
+        </button>
+      </>
+    ) : null}
+    {mfaStart && (
+      <form onSubmit={mfaConfirm} className="space-y-3">
+        <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Add this account to your authenticator app, then enter the 6-digit code it shows:
+        </p>
+        <div className={`text-xs break-all rounded-lg p-3 font-mono ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-50 text-slate-700'}`}>
+          <div className="mb-1"><strong>Key:</strong> {mfaStart.manualKey}</div>
+          <div className="break-all"><strong>Link:</strong> {mfaStart.otpauthUri}</div>
+        </div>
+        <label className="block text-xs">
+          6-digit code
+          <input required inputMode="numeric" autoComplete="one-time-code" value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} className="block w-full mt-1 p-2 rounded border bg-white text-slate-900" placeholder="123456" />
+        </label>
+        <div className="flex gap-3">
+          <button type="submit" disabled={mfaBusy} className="text-xs px-3 py-2 rounded-lg bg-emerald-700 text-white font-semibold disabled:opacity-60">{mfaBusy ? 'Checking...' : 'Confirm and activate'}</button>
+          <button type="button" disabled={mfaBusy} className="text-xs px-3 py-2 rounded-lg border" onClick={() => { setMfaStart(null); setMfaCode(''); setMfaError(null); }}>Cancel</button>
+        </div>
+      </form>
+    )}
+    {mfaCodes && (
+      <div>
+        <p className={`text-xs font-semibold mb-2 ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>
+          Two-factor is now ON. Save these one-time recovery codes somewhere safe - they are shown only once and each works once if you lose your phone.
+        </p>
+        <div className={`grid grid-cols-2 gap-1 text-xs font-mono rounded-lg p-3 mb-2 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-50 text-slate-700'}`}>
+          {mfaCodes.map((c) => <div key={c}>{c}</div>)}
+        </div>
+        <button className="text-xs px-3 py-2 rounded-lg border" onClick={() => setMfaCodes(null)}>I have saved them</button>
+      </div>
+    )}
+    {mfaError && <p role="alert" className={`text-xs mt-3 ${isDarkMode ? 'text-amber-300' : 'text-amber-700'}`}>{mfaError}</p>}
+  </div>
+  ) : null;
+
+  if (operationsMode) return <div className="max-w-2xl mx-auto space-y-6"><section className={card}>
     <h2 className="font-display text-xl font-semibold">Operator account</h2>
     <p className="text-sm mt-3 break-words">{auth?.email}</p>
     <p className="text-sm text-stone-600 mt-2">Administrator access is assigned to your account ID. No company registration, bidder profile or paid subscription is required to use operations controls.</p>
     <p className="text-xs mt-3 break-all text-stone-500">Account ID {auth?.userId}</p>
     <button onClick={logout} className="mt-4 rounded-lg border px-4 py-2 text-sm">Sign out</button>
     {logoutError && <p role="alert" className="text-red-700 text-sm mt-3">{logoutError}</p>}
-  </section>;
+  </section>{mfaCard}</div>;
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className={card}>
@@ -218,35 +283,40 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           {status === 'active'
             ? <CheckCircle2 className={`w-4 h-4 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
             : <AlertCircle className={`w-4 h-4 ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`} />}
-          <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{info?.entitlement?.planId === 'test_cohort' ? (status === 'active' ? 'Free beta access active' : 'Beta access ended') : status === 'none' && info?.beta?.redeemAvailable ? 'Beta code not redeemed' : statusLabel[status] || status}</span>
+          <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{info?.freemium ? 'Free plan' : info?.entitlement?.planId === 'test_cohort' ? (status === 'active' ? 'Free access active' : 'Free access ended') : statusLabel[status] || status}</span>
         </div>
-        {info?.entitlement?.currentPeriodEnd && status === 'active' && (
+        {info?.freemium?.resetsAt && (
           <p className={`text-xs mt-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
-            {info.entitlement.planId === 'test_cohort' ? 'Beta ends' : 'Access ends'} {new Date(info.entitlement.currentPeriodEnd).toLocaleString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
+            Free analyses reset {new Date(info.freemium.resetsAt).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         )}
-        <p className="text-xs mt-3 text-slate-500">Real payments are not connected. Beta access does not collect a card or start a paid subscription.</p>
-        {info?.entitlement?.planId === 'test_cohort' && <p className="text-xs mt-2 text-slate-500">Public or synthetic documents only. Rule-based preview, not a language model. No paid searches. Check the source tender before relying on results.</p>}
-        {info?.beta?.redeemAvailable && info.entitlement?.effectiveStatus === 'none' && (
-          <form onSubmit={redeemBeta} className="mt-4 space-y-3 rounded-xl border-2 border-emerald-600 bg-emerald-50 p-4 text-emerald-950">
-            <label htmlFor="beta-code" className="block text-lg font-semibold">Redeem your provided beta code</label>
-            <p className="text-xs text-slate-500">One shared beta window. Late joiners get the time remaining, not a new seven days.</p>
-            <input id="beta-code" type="password" autoComplete="off" value={betaCode} onChange={e => setBetaCode(e.target.value)} maxLength={256} required className="w-full rounded-lg border border-slate-300 bg-transparent p-3" />
-            <button disabled={betaBusy} className="rounded-lg bg-emerald-700 text-white px-4 py-2 disabled:opacity-50">{betaBusy ? 'Checking...' : 'Apply beta code'}</button>
-          </form>
+        {!info?.freemium && info?.entitlement?.currentPeriodEnd && status === 'active' && (
+          <p className={`text-xs mt-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>
+            Access ends {new Date(info.entitlement.currentPeriodEnd).toLocaleString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })}
+          </p>
         )}
-        {betaMessage && <p role="status" className="text-sm mt-3">{betaMessage}</p>}
-        {info?.allowances && (
+        <p className="text-xs mt-3 text-slate-500">Real payments are not connected. No card is collected and no paid subscription starts.</p>
+        {(info?.freemium || info?.entitlement?.planId === 'test_cohort') && <p className="text-xs mt-2 text-slate-500">Public or synthetic documents only. No paid searches. The exact analysis engine the server used is shown on every result. Check the source tender before relying on results.</p>}
+        {(info?.freemium || info?.allowances) && info && (
           <div className={`mt-4 pt-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-            <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>{info.entitlement?.planId === 'test_cohort' ? 'Usage across this beta pilot' : 'Usage this month'}</p>
+            <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Usage this month</p>
             <div className={`grid grid-cols-2 gap-3 text-sm ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
               <div className={`rounded-xl p-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                <div className="text-lg font-bold">{info.usage?.analyses ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.allowances.includedAnalyses}</span></div>
+                <div className="text-lg font-bold">{info.usage?.analyses ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.freemium ? info.freemium.includedAnalyses : info.allowances!.includedAnalyses}</span></div>
                 <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>RFP analyses</div>
               </div>
               <div className={`rounded-xl p-3 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                <div className="text-lg font-bold">{info.usage?.serpapiLookups ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.allowances.includedSerpapiLookups}</span></div>
-                <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Live tender lookups</div>
+                {info.freemium ? (
+                  <>
+                    <div className="text-lg font-bold">0</div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Live tender lookups not included on the Free plan</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-lg font-bold">{info.usage?.serpapiLookups ?? 0}<span className={`text-xs font-normal ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}> / {info.allowances!.includedSerpapiLookups}</span></div>
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-500' : 'text-slate-500'}`}>Live tender lookups</div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -258,11 +328,17 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           <Trash2 className={`w-5 h-5 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`} />
           <h3 className={`text-sm font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Your data</h3>
         </div>
-        <p className={`text-xs leading-relaxed mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-          Your company profile and bid drafts stay saved until you delete them - there is no automatic expiry.
-          Tender analyses are returned to this browser view without a saved server-side analysis history. Leaving or reloading the view loses that result. Evidence notes you add to a requirement stay saved with that draft until you delete the
-          draft. Bid drafts can be deleted one by one from the Bid Readiness view.
+        <p className={`text-xs leading-relaxed mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Profile and bid drafts stay saved until you delete them. Analyses are not kept on the server after they are returned.
         </p>
+        <details className={`text-xs leading-relaxed mb-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          <summary className="cursor-pointer font-semibold">Exactly what is kept, and what you can delete</summary>
+          <p className="mt-2">
+            Your company profile and bid drafts stay saved until you delete them - there is no automatic expiry.
+            Tender analyses are returned to this browser view without a saved server-side analysis history. Leaving or reloading the view loses that result. Evidence notes you add to a requirement stay saved with that draft until you delete the
+            draft. Bid drafts can be deleted one by one from the Bid Readiness view.
+          </p>
+        </details>
         {profileDelete === 'done' ? (
           <p className={`text-xs font-medium ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>
             Saved company profile deleted.
@@ -303,6 +379,7 @@ export const Account: React.FC<AccountProps> = ({ isDarkMode, auth, onAuthChange
           </div>
         )}
       </div>
+      {mfaCard}
       {info?.accountDeletionAvailable && (
         <div className={card}>
           <h3 className={`text-sm font-bold uppercase mb-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>Delete account</h3>

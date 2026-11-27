@@ -53,6 +53,85 @@ export class MockBillingProvider implements BillingProvider {
 }
 
 /**
+ * Paystack (paystack.co) provider. Webhook authenticity: HMAC-SHA512 of the
+ * exact raw request bytes with the merchant secret key, hex digest in the
+ * x-paystack-signature header (https://paystack.com/docs/payments/webhooks/).
+ * Event mapping covers the subscription lifecycle TenderAgent needs for the
+ * R250/month plan; anything else is ignored (acked, not applied).
+ * Prepared from Paystack's published docs only - no merchant account exists
+ * yet, so no live payload has been observed; field names come from the docs.
+ */
+export class PaystackBillingProvider implements BillingProvider {
+  name = 'paystack';
+  constructor(private secret: string, private planCode: string) {}
+
+  static sign(secret: string, rawBody: Buffer | string): string {
+    return createHmac('sha512', secret).update(rawBody).digest('hex');
+  }
+
+  verifyAndNormalize(rawBody: Buffer, signatureHeader: string | undefined): NormalizedBillingEvent | null {
+    if (!signatureHeader) return null;
+    const expected = PaystackBillingProvider.sign(this.secret, rawBody);
+    const a = Buffer.from(expected);
+    const b = Buffer.from(signatureHeader);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+    try {
+      const p = JSON.parse(rawBody.toString('utf8'));
+      const event: string = p.event;
+      const d = p.data || {};
+      // Tenant binding: checkout must pass metadata.tenantId when creating
+      // the subscription; a missing binding means we cannot attribute the
+      // event, so it is rejected rather than guessed.
+      const tenantId = d.metadata?.tenantId;
+      if (typeof tenantId !== 'string' || !tenantId) return null;
+      // Only events for our subscription plan; one-time charges or other
+      // products are not subscription lifecycle signals for us.
+      const plan = d.plan?.plan_code || d.plan_code || d.subscription?.plan?.plan_code;
+      const typeMap: Record<string, string> = {
+        'subscription.create': 'subscription.activated',
+        'charge.success': 'subscription.renewed',
+        'invoice.payment_failed': 'subscription.payment_failed',
+        'subscription.not_renewing': 'subscription.cancellation_scheduled',
+        'subscription.disable': 'subscription.cancelled',
+      };
+      const type = typeMap[event];
+      if (!type) return null;
+      if (event === 'charge.success' && plan && this.planCode && plan !== this.planCode) return null;
+      const ref = d.subscription_code || d.subscription?.subscription_code || d.reference;
+      const idSeed = d.id ?? d.subscription_code ?? d.reference ?? d.customer?.customer_code;
+      if (idSeed === undefined || idSeed === null) return null;
+      return {
+        eventId: `${event}:${idSeed}`,
+        provider: this.name,
+        type: type as NormalizedBillingEvent['type'],
+        tenantId,
+        planId: typeof plan === 'string' ? plan : undefined,
+        subscriptionRef: typeof ref === 'string' ? ref : undefined,
+        periodEnd: d.next_payment_date ? new Date(d.next_payment_date) : undefined,
+        occurredAt: d.paid_at ? new Date(d.paid_at) : new Date(),
+      };
+    } catch {
+      return null;
+    }
+  }
+  /** Start a hosted checkout for the configured plan. Called only from the
+   *  config-gated /billing/subscribe route; the tenant binding travels in
+   *  metadata so the webhook activates the right account. */
+  async initializeTransaction(email: string, tenantId: string, userId: string): Promise<{ authorization_url: string; reference: string }> {
+    const res = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, plan: this.planCode, metadata: { tenantId, userId } }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.status || !body?.data?.authorization_url || !body?.data?.reference) {
+      throw new Error(`paystack initialize failed: HTTP ${res.status}`);
+    }
+    return { authorization_url: body.data.authorization_url, reference: body.data.reference };
+  }
+}
+
+/**
  * Raw-body webhook router. Must be mounted BEFORE express.json() so HMAC
  * signatures are verified against the exact bytes the provider sent.
  */
@@ -89,5 +168,48 @@ export function createWebhookRouter(providers: BillingProvider[], repos: Foundat
       res.json({ success: true, applied: result.applied, reason: result.reason });
     },
   );
+  return router;
+}
+
+// ---------------------------------------------------------------------------
+// Checkout initiation (config-gated). Only active when the operator has
+// configured PAYSTACK_SECRET_KEY + PAYSTACK_PLAN_CODE; every other deployment
+// fails closed with payments_not_configured before any provider call.
+// ---------------------------------------------------------------------------
+
+import type { FoundationConfig } from './config';
+import { hashToken, SESSION_COOKIE, parseCookies } from './auth';
+
+export function createBillingApiRouter(config: FoundationConfig, repos: FoundationRepos): Router {
+  const router = Router();
+  router.post('/subscribe', async (req, res) => {
+    try {
+      const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+      const session = token ? await repos.sessions.getByTokenHash(hashToken(token)) : null;
+      if (!session || session.pendingMfa || session.expiresAt.getTime() <= Date.now()) {
+        res.status(401).json({ success: false, error: 'authentication_required' });
+        return;
+      }
+      const user = await repos.users.getById(session.userId);
+      if (!user) {
+        res.status(401).json({ success: false, error: 'authentication_required' });
+        return;
+      }
+      if (!config.paystackSecretKey || !config.paystackPlanCode) {
+        res.status(503).json({ success: false, error: 'payments_not_configured' });
+        return;
+      }
+      const existing = await repos.entitlements.get(user.tenantId);
+      if (existing && (existing.status === 'active' || existing.status === 'past_due')) {
+        res.status(409).json({ success: false, error: 'already_subscribed' });
+        return;
+      }
+      const provider = new PaystackBillingProvider(config.paystackSecretKey, config.paystackPlanCode);
+      const checkout = await provider.initializeTransaction(user.email, user.tenantId, user.id);
+      res.json({ success: true, authorization_url: checkout.authorization_url, reference: checkout.reference });
+    } catch (err: any) {
+      res.status(502).json({ success: false, error: 'payments_init_failed' });
+    }
+  });
   return router;
 }
