@@ -9,6 +9,8 @@ import { ITender, IUserProfile, ISentrySpanRecord, IBidResponseSkeleton } from '
 
 interface RfpAnalyzerProps {
   userProfile: IUserProfile;
+  /** Fired once per successful server analysis (result actually rendered). */
+  onAnalysisComplete?: () => void;
   onOpenSkeleton: (skeleton: IBidResponseSkeleton) => void;
   onSwitchToCalculator: (pointsSystem: '80/20' | '90/10', tenderTitle: string) => void;
   /** Operator flag: the model-switcher bar is platform tooling, not customer UI. */
@@ -19,6 +21,7 @@ interface RfpAnalyzerProps {
 
 export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
   userProfile,
+  onAnalysisComplete,
   onOpenSkeleton,
   onSwitchToCalculator,
   isAdmin = false,
@@ -230,6 +233,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
         setSpans(data.spans || []);
         setExtractedData(data.tender);
         setActiveSkeleton(data.skeleton);
+        onAnalysisComplete?.();
       } else {
         throw new Error(data.error || 'Pipeline execution failed');
       }
