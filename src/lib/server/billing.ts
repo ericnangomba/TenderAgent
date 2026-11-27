@@ -114,6 +114,21 @@ export class PaystackBillingProvider implements BillingProvider {
       return null;
     }
   }
+  /** Start a hosted checkout for the configured plan. Called only from the
+   *  config-gated /billing/subscribe route; the tenant binding travels in
+   *  metadata so the webhook activates the right account. */
+  async initializeTransaction(email: string, tenantId: string, userId: string): Promise<{ authorization_url: string; reference: string }> {
+    const res = await fetch('https://api.paystack.co/transaction/initialize', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, plan: this.planCode, metadata: { tenantId, userId } }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body?.status || !body?.data?.authorization_url || !body?.data?.reference) {
+      throw new Error(`paystack initialize failed: HTTP ${res.status}`);
+    }
+    return { authorization_url: body.data.authorization_url, reference: body.data.reference };
+  }
 }
 
 /**
@@ -153,5 +168,48 @@ export function createWebhookRouter(providers: BillingProvider[], repos: Foundat
       res.json({ success: true, applied: result.applied, reason: result.reason });
     },
   );
+  return router;
+}
+
+// ---------------------------------------------------------------------------
+// Checkout initiation (config-gated). Only active when the operator has
+// configured PAYSTACK_SECRET_KEY + PAYSTACK_PLAN_CODE; every other deployment
+// fails closed with payments_not_configured before any provider call.
+// ---------------------------------------------------------------------------
+
+import type { FoundationConfig } from './config';
+import { hashToken, SESSION_COOKIE, parseCookies } from './auth';
+
+export function createBillingApiRouter(config: FoundationConfig, repos: FoundationRepos): Router {
+  const router = Router();
+  router.post('/subscribe', async (req, res) => {
+    try {
+      const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+      const session = token ? await repos.sessions.getByTokenHash(hashToken(token)) : null;
+      if (!session || session.pendingMfa || session.expiresAt.getTime() <= Date.now()) {
+        res.status(401).json({ success: false, error: 'authentication_required' });
+        return;
+      }
+      const user = await repos.users.getById(session.userId);
+      if (!user) {
+        res.status(401).json({ success: false, error: 'authentication_required' });
+        return;
+      }
+      if (!config.paystackSecretKey || !config.paystackPlanCode) {
+        res.status(503).json({ success: false, error: 'payments_not_configured' });
+        return;
+      }
+      const existing = await repos.entitlements.get(user.tenantId);
+      if (existing && (existing.status === 'active' || existing.status === 'past_due')) {
+        res.status(409).json({ success: false, error: 'already_subscribed' });
+        return;
+      }
+      const provider = new PaystackBillingProvider(config.paystackSecretKey, config.paystackPlanCode);
+      const checkout = await provider.initializeTransaction(user.email, user.tenantId, user.id);
+      res.json({ success: true, authorization_url: checkout.authorization_url, reference: checkout.reference });
+    } catch (err: any) {
+      res.status(502).json({ success: false, error: 'payments_init_failed' });
+    }
+  });
   return router;
 }
