@@ -87,7 +87,9 @@ test('month boundary cannot reset pilot; expiry exact, no grace; failure refunds
   await repos.beta!.redeem(ent);
   for (let i = 0; i < 20; i++) assert.equal((await authorizeAndConsume(repos, cfg, 'a', 'analysis', now)).allowed, true);
   assert.equal((await authorizeAndConsume(repos, cfg, 'a', 'analysis', new Date('2026-12-01T10:00:00Z'))).allowed, false);
-  assert.equal((await checkAccess(repos, cfg, 'a', 'analysis', end)).allowed, false);
+  const atEnd = await checkAccess(repos, cfg, 'a', 'analysis', end);
+  assert.equal(atEnd.allowed, true);
+  assert.equal(atEnd.periodKey, '2026-12');
   assert.equal(effectiveStatus(ent, end, 999), 'cancelled');
   await repos.beta!.redeem({ ...ent, currentPeriodEnd: new Date('2027-01-01') });
   assert.equal((await repos.entitlements.get('a'))?.currentPeriodEnd?.toISOString(), end.toISOString());
