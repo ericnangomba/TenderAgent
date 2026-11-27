@@ -5,8 +5,7 @@
  */
 import mongoose, { Schema } from 'mongoose';
 import type {
-  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile,
-} from './types';
+  FoundationRepos, Tenant, User, Session, Entitlement, BillingEventRecord, UsageCounter, TenantProfile, MfaRecord } from './types';
 
 const TenantSchema = new Schema({ _id: String, companyName: String, createdAt: Date }, { versionKey: false });
 const UserSchema = new Schema({
@@ -16,6 +15,11 @@ const UserSchema = new Schema({
 const SessionSchema = new Schema({
   _id: String, userId: String, tenantId: String,
   tokenHash: { type: String, unique: true, index: true }, expiresAt: Date, createdAt: Date,
+  mfaVerified: Boolean, pendingMfa: Boolean,
+}, { versionKey: false });
+const MfaSchema = new Schema({
+  _id: String, tenantId: String, secretEnc: String, enabled: Boolean,
+  recoveryHashes: [String], lastTotpCounter: { type: Number, default: -1 }, enrolledAt: Date, updatedAt: Date,
 }, { versionKey: false });
 const EntitlementSchema = new Schema({
   _id: String, planId: String, status: String, currentPeriodEnd: Date,
@@ -39,6 +43,7 @@ const models = () => ({
   Tenant: mongoose.models.FoundationTenant || mongoose.model('FoundationTenant', TenantSchema),
   User: mongoose.models.FoundationUser || mongoose.model('FoundationUser', UserSchema),
   Session: mongoose.models.FoundationSession || mongoose.model('FoundationSession', SessionSchema),
+  Mfa: mongoose.models.FoundationMfa || mongoose.model('FoundationMfa', MfaSchema),
   Entitlement: mongoose.models.FoundationEntitlement || mongoose.model('FoundationEntitlement', EntitlementSchema),
   BillingEvent: mongoose.models.FoundationBillingEvent || mongoose.model('FoundationBillingEvent', BillingEventSchema),
   Usage: mongoose.models.FoundationUsage || mongoose.model('FoundationUsage', UsageSchema),
@@ -80,8 +85,22 @@ export function createMongoRepos(): FoundationRepos {
       async getByEmail(email) { const d = await m.User.findOne({ email: email.toLowerCase() }).lean(); return d ? withKey<User>(d, 'id', String((d as any)._id)) : null; },
       async getById(id) { const d = await m.User.findById(id).lean(); return d ? withKey<User>(d, 'id', id) : null; },
     },
+    mfa: {
+      async get(userId) { const d = await m.Mfa.findById(userId).lean(); return d ? withKey<MfaRecord>(d, 'userId', userId) : null; },
+      async put(rec: MfaRecord) { await m.Mfa.updateOne({ _id: rec.userId }, { $set: { ...rec } }, { upsert: true }); },
+      async delete(userId) { await m.Mfa.deleteOne({ _id: userId }); },
+      async consumeRecoveryCode(userId, hash) {
+        const r = await m.Mfa.findOneAndUpdate({ _id: userId, recoveryHashes: hash }, { $pull: { recoveryHashes: hash } });
+        return r !== null;
+      },
+      async stampTotpCounter(userId, counter) {
+        const r = await m.Mfa.findOneAndUpdate({ _id: userId, $or: [{ lastTotpCounter: { $lt: counter } }, { lastTotpCounter: { $exists: false } }] }, { $set: { lastTotpCounter: counter } });
+        return r !== null;
+      },
+    },
     sessions: {
       async create(s: Session) { await m.Session.create({ _id: s.id, ...s }); },
+      async update(s: Session) { await m.Session.updateOne({ _id: s.id }, { $set: { ...s } }); },
       async getByTokenHash(h) { const d = await m.Session.findOne({ tokenHash: h }).lean(); return d ? withKey<Session>(d, 'id', String((d as any)._id)) : null; },
       async delete(id) { await m.Session.deleteOne({ _id: id }); },
     },
