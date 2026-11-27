@@ -457,9 +457,13 @@ export function createFoundation(options: FoundationOptions = {}): Foundation {
           : { effectiveStatus: 'none' },
         freemium: onFreemium ? { includedAnalyses: FREEMIUM_INCLUDED_ANALYSES, resetsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString() } : null,
         usage,
-        // Own plan's usage allowances only. No plan catalog or pricing here:
-        // the R250/60/30 figures are provisional config, not a public offer.
-        allowances: plan
+        // Own plan's usage allowances only, and only while the entitlement is
+        // effective: a lapsed or cancelled account is on the freemium baseline,
+        // so showing its old plan allowance (e.g. the beta cohort's 20) next to
+        // the freemium 3 would promise capacity the spend guards never grant.
+        // No plan catalog or pricing here: the R250/60/30 figures are
+        // provisional config, not a public offer.
+        allowances: !onFreemium && plan
           ? { includedAnalyses: ent?.planId === 'test_cohort' ? 20 : plan.includedAnalyses, includedSerpapiLookups: ent?.planId === 'test_cohort' ? 0 : plan.includedSerpapiLookups }
           : null,
       },
@@ -729,4 +733,4 @@ function applyReadyInvariant(app: BidApplication): void {
   };
 
   return { config, repos, originCheckMiddleware, sessionMiddleware, tenantWorkMiddleware, apiCacheHeaders, restoreReconciliationMiddleware, guardMiddleware, serpApiAccess, cloudLlmAccess, releaseConsumption, requireAuth, requireAdmin, isAdmin, adminRouter, router, webhookRouter };
-}
+      }
