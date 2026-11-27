@@ -35,6 +35,14 @@ test('authenticated tenant without subscription: freemium analyses allowed, paid
   // Paid search is never part of the free allowance.
   const scrape = await fetch(`${t.baseUrl}/api/scrape`, { headers: { cookie } });
   assert.equal(scrape.status, 402);
+  // The account payload carries the free allowance and its monthly reset for the quota display.
+  const account = await (await fetch(`${t.baseUrl}/api/account`, { headers: { cookie } })).json();
+  assert.equal(account.account.freemium.includedAnalyses, 3);
+  assert.equal(account.account.usage.analyses, 1);
+  const reset = new Date(account.account.freemium.resetsAt);
+  const now = new Date();
+  const expectedMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  assert.equal(reset.toISOString(), expectedMonth.toISOString());
 });
 
 test('webhook: bad signature rejected, unknown provider 404, valid activation opens access', async () => {
