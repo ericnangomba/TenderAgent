@@ -317,7 +317,7 @@ export const RfpAnalyzer: React.FC<RfpAnalyzerProps> = ({
               Drop the tender PDF or paste its text below. Your checklist appears on this page when the check finishes.
             </p>
 
-            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Beta testers: use public or synthetic documents only. The free beta uses a rule-based preview, not a language model. Confirm every requirement against the source tender.</p>
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Use public or synthetic documents only. Confirm every requirement against the source tender document.</p>
             {/* Sample tenders: optional, clearly labeled, collapsed by default */}
             <div className="mb-4">
               <button
