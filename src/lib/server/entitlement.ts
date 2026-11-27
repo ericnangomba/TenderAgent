@@ -46,6 +46,25 @@ export function entitlementStatus(ent: Entitlement | null, config: FoundationCon
   return effectiveStatus(ent, now, config.pastDueGraceDays);
 }
 
+/**
+ * Freemium baseline (Eric, 2026-11-27: "Any sign in is automatically
+ * freemium 3 analysis a month"): EVERY signed-in account without an ACTIVE
+ * paid entitlement gets 3 free analyses per calendar month. That includes
+ * former beta testers whose cohort window ended and lapsed paid accounts.
+ * The paid entitlement row and its status are preserved untouched: the
+ * baseline never restores paid features (analysis only, no paid search),
+ * never writes to the entitlement, and never clears or reduces a past_due
+ * obligation - a successful payment webhook reactivates the paid plan on
+ * its own period key. Free usage is calendar-keyed, so neither the old
+ * beta_pilot_v1 window nor a paid period bucket is consumed or reset.
+ */
+export function freemiumBaselineApplies(ent: Entitlement | null, config: FoundationConfig, now: Date = new Date()): boolean {
+  const status = entitlementStatus(ent, config, now);
+  return status === 'none' || status === 'cancelled' || status === 'past_due';
+}
+
+export const FREEMIUM_INCLUDED_ANALYSES = 3;
+
 export interface ApplyResult {
   applied: boolean;
   reason?: 'duplicate' | 'stale' | 'tenant_missing';
@@ -148,12 +167,14 @@ export async function authorizeAndConsume(
   const ent = await repos.entitlements.get(tenantId);
   const status = entitlementStatus(ent, config, now);
 
-  if (status === 'none') {
-    // Freemium: 3 free analyses for accounts without a subscription.
+  if (freemiumBaselineApplies(ent, config, now)) {
+    // Freemium baseline: 3 free analyses per calendar month for every
+    // signed-in account, including former beta testers. Calendar-keyed, so
+    // an expired beta window's beta_pilot_v1 usage can never reset it.
     if (action !== 'analysis') return { allowed: false, reason: 'no_subscription', status };
     const usage = await repos.usage.get(tenantId, currentPeriodKey(now));
-    if (usage.analyses >= 3) return { allowed: false, reason: 'freemium_limit_reached', status };
-    const claim = await repos.usage.tryConsume(tenantId, currentPeriodKey(now), 'analyses', 3);
+    if (usage.analyses >= FREEMIUM_INCLUDED_ANALYSES) return { allowed: false, reason: 'freemium_limit_reached', status };
+    const claim = await repos.usage.tryConsume(tenantId, currentPeriodKey(now), 'analyses', FREEMIUM_INCLUDED_ANALYSES);
     if (!claim.allowed) return { allowed: false, reason: 'no_subscription', status };
     return { allowed: true, status, periodKey: currentPeriodKey(now) };
   }
@@ -199,11 +220,11 @@ export async function checkAccess(
   const ent = await repos.entitlements.get(tenantId);
   const status = entitlementStatus(ent, config, now);
 
-  if (status === 'none') {
-    // Freemium: 3 free analyses for accounts without a subscription.
+  if (freemiumBaselineApplies(ent, config, now)) {
+    // Freemium baseline: see authorizeAndConsume.
     if (action !== 'analysis') return { allowed: false, reason: 'no_subscription', status };
     const usage = await repos.usage.get(tenantId, currentPeriodKey(now));
-    if (usage.analyses >= 3) return { allowed: false, reason: 'freemium_limit_reached', status };
+    if (usage.analyses >= FREEMIUM_INCLUDED_ANALYSES) return { allowed: false, reason: 'freemium_limit_reached', status };
     return { allowed: true, status, periodKey: currentPeriodKey(now) };
   }
   if (status === 'cancelled' || status === 'past_due') {
