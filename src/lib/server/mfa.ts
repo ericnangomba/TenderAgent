@@ -35,6 +35,12 @@ function decryptSecret(configKey: string, secretEnc: string): string {
 export async function startEnrollment(
   repos: FoundationRepos, configKey: string, userId: string, tenantId: string, email: string,
 ): Promise<{ otpauthUri: string; manualKey: string; encryption: 'on' | 'off' }> {
+  // Fail closed: without a working PROFILE_FIELD_KEY the TOTP secret would be
+  // stored in plaintext, which is never acceptable. Refuse before generating
+  // or persisting anything. (General profile fields keep their own behavior.)
+  if (!fieldEncryptionEnabled(configKey)) {
+    throw new Error('mfa_unavailable: field encryption key not configured');
+  }
   const secret = generateTotpSecret();
   const secretEnc = String(encryptField(configKey, secret));
   const now = new Date();
