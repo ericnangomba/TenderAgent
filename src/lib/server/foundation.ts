@@ -11,7 +11,7 @@ import type { GatedAction } from './entitlement';
 import { createMemoryRepos } from './repos/memory';
 import { createAuthRouter, createSessionMiddleware } from './auth';
 import { authorizeAndConsume, entitlementStatus, currentPeriodKey, usagePeriodKey, freemiumBaselineApplies, FREEMIUM_INCLUDED_ANALYSES, type AccessDecision } from './entitlement';
-import { createWebhookRouter, MockBillingProvider, PaystackBillingProvider, type BillingProvider } from './billing';
+import { createWebhookRouter, createBillingApiRouter, MockBillingProvider, PaystackBillingProvider, type BillingProvider } from './billing';
 import { evaluateReadiness, seedRequirementsForTender, type BidApplication, type Requirement } from './readiness';
 import { randomBytes, createHash } from 'node:crypto';
 import { AccountDeletionError, TenantWorkCoordinator } from './accountLifecycle';
@@ -673,6 +673,7 @@ function applyReadyInvariant(app: BidApplication): void {
 
   const router = Router();
   router.use(authRouter);
+  router.use('/billing', createBillingApiRouter(config, repos));
   router.use(accountRouter);
   router.use('/applications', applicationsRouter);
 
